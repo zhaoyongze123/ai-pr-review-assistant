@@ -1,0 +1,8 @@
+[project]
+name = "rule-engine"
+version = "0.1.0"
+description = "AI PR Review 助手规则引擎"
+requires-python = ">=3.14"
+
+[tool.ruff]
+line-length = 100
