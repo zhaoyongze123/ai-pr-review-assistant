@@ -1,0 +1,25 @@
+{
+  "name": "ai-pr-review-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.1.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@ai-pr-review/api",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "check": "npm run check:types && npm run check:format",
+    "check:types": "npm run check --workspaces --if-present",
+    "check:format": "prettier . --check",
+    "format": "prettier . --write"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.1"
+  }
+}

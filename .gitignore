@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.DS_Store
+coverage
+.turbo
+*.log
+apps/*/dist
+packages/*/dist
+services/*/dist
+services/rule-engine/.venv
+*.tsbuildinfo
