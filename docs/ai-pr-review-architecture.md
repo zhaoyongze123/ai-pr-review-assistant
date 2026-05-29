@@ -42,7 +42,7 @@
 
 ## 3. 总体架构
 
-## 3.1 分层视图
+### 3.1 分层视图
 
 - 接入层：GitHub API、前端 UI、WebSocket 客户端
 - 应用层：PR Fetcher、Orchestrator、Prompt Builder、Response Parser、GitHub Writer
@@ -50,7 +50,7 @@
 - 数据层：PostgreSQL、pgvector、Redis、MinIO
 - 可观测层：OpenTelemetry、日志、任务状态事件
 
-## 3.2 Mermaid 架构图
+### 3.2 Mermaid 架构图
 
 ```mermaid
 flowchart LR
@@ -91,7 +91,7 @@ flowchart LR
     Worker --> OTel
 ```
 
-## 3.3 核心模块职责
+### 3.3 核心模块职责
 
 | 模块 | 职责 | 输入 | 输出 |
 | --- | --- | --- | --- |
@@ -109,7 +109,7 @@ flowchart LR
 
 ## 4. 数据流设计
 
-## 4.1 主流程
+### 4.1 主流程
 
 1. 前端触发“分析 PR”。
 2. 后端创建 `review_job` 记录。
@@ -125,7 +125,7 @@ flowchart LR
 12. 前端增量更新文件列表与 Diff Viewer。
 13. 所有任务完成后更新 `review_jobs.status = done`。
 
-## 4.2 Mermaid 流程图
+### 4.2 Mermaid 流程图
 
 ```mermaid
 flowchart TD
@@ -147,7 +147,7 @@ flowchart TD
     N -- 是 --> O["更新 job 状态为 done"]
 ```
 
-## 4.3 Mermaid 时序图
+### 4.3 Mermaid 时序图
 
 ```mermaid
 sequenceDiagram
@@ -190,7 +190,7 @@ sequenceDiagram
 
 ## 5. 技术栈
 
-## 5.1 后端
+### 5.1 后端
 
 | 组件 | 技术选型 | 说明 |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ sequenceDiagram
 | 规则引擎 | Python Sidecar + semgrep / ESLint | 规则执行与 Node 主进程解耦 |
 | 可观测性 | OpenTelemetry | Trace、metrics、日志关联 |
 
-## 5.2 前端
+### 5.2 前端
 
 | 组件 | 技术选型 | 说明 |
 | --- | --- | --- |
@@ -214,7 +214,7 @@ sequenceDiagram
 | 实时通道 | socket.io-client | 便于对接 Socket.IO 网关 |
 | 样式 | Tailwind CSS | 快速构建后台类界面 |
 
-## 5.3 本地开发基础设施
+### 5.3 本地开发基础设施
 
 | 组件 | 用途 |
 | --- | --- |
@@ -259,7 +259,7 @@ ai-pr-review-assistant/
 
 ## 7. 数据模型设计
 
-## 7.1 核心表
+### 7.1 核心表
 
 系统核心以五张业务表为主，再补充若干支撑表。
 
@@ -392,7 +392,7 @@ ai-pr-review-assistant/
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-## 7.2 支撑表建议
+### 7.2 支撑表建议
 
 为提高可追踪性，建议增加以下表：
 
@@ -401,7 +401,7 @@ ai-pr-review-assistant/
 - `github_writebacks`：记录评论回写 GitHub 的结果
 - `code_embeddings`：存历史 `(代码片段, comment)` 向量
 
-## 7.3 PostgreSQL DDL 草案
+### 7.3 PostgreSQL DDL 草案
 
 ```sql
 create extension if not exists "uuid-ossp";
@@ -533,11 +533,11 @@ create index idx_code_embeddings_vector on code_embeddings using ivfflat (embedd
 
 ## 8. Diff 与行号映射设计
 
-## 8.1 为什么这是系统关键点
+### 8.1 为什么这是系统关键点
 
 PR Review 的真实交付不是“模型说了什么”，而是“模型说的问题能否准确挂到对应代码行”。如果行号错位，前端定位、GitHub 回写、用户信任都会直接失效。
 
-## 8.2 结构化 DiffHunk
+### 8.2 结构化 DiffHunk
 
 建议将每个 patch 解析为如下结构：
 
@@ -562,7 +562,7 @@ interface DiffHunk {
 }
 ```
 
-## 8.3 推荐的行引用格式
+### 8.3 推荐的行引用格式
 
 Prompt 中不要只给裸行号，应该给稳定引用标识：
 
@@ -582,7 +582,7 @@ Prompt 中不要只给裸行号，应该给稳定引用标识：
 
 这样模型返回的不是“不稳定的第 3 行”，而是稳定的 `L101+`。
 
-## 8.4 映射策略
+### 8.4 映射策略
 
 1. patch 解析阶段生成 `diffLineRef -> newLineNumber/oldLineNumber` 字典。
 2. Prompt 要求模型只输出 `diff_line_ref`，禁止输出自然语言“上面那行”。
@@ -594,7 +594,7 @@ Prompt 中不要只给裸行号，应该给稳定引用标识：
 
 ## 9. 后端设计
 
-## 9.1 模块划分
+### 9.1 模块划分
 
 建议 NestJS 模块如下：
 
@@ -612,7 +612,7 @@ apps/api/src/modules/
 └── observability/
 ```
 
-## 9.2 PR Fetcher 设计
+### 9.2 PR Fetcher 设计
 
 ### 输入
 
@@ -636,7 +636,7 @@ apps/api/src/modules/
    - 标记 `unsupported`
    - 仅写元信息，不进 LLM 分析
 
-## 9.3 Orchestrator 设计
+### 9.3 Orchestrator 设计
 
 ### 核心职责
 
@@ -670,7 +670,7 @@ apps/api/src/modules/
 - 单文件失败重试 3 次
 - LLM 超时默认 45 秒
 
-## 9.4 Rule Engine 设计
+### 9.4 Rule Engine 设计
 
 支持两种来源：
 
@@ -696,7 +696,7 @@ interface RuleViolation {
 }
 ```
 
-## 9.5 LLM Gateway 设计
+### 9.5 LLM Gateway 设计
 
 ### 目标
 
@@ -730,7 +730,7 @@ interface LlmReviewRequest {
 2. 超时、429、5xx 时自动切备用 provider
 3. 记录 `fallback_count` 和最终 provider
 
-## 9.6 Response Parser 设计
+### 9.6 Response Parser 设计
 
 职责：
 
@@ -748,7 +748,7 @@ interface LlmReviewRequest {
 
 ## 10. LLM Prompt 与 Structured Output 契约
 
-## 10.1 Prompt 设计原则
+### 10.1 Prompt 设计原则
 
 - 只让模型审查“变更部分”，不要泛化到整个仓库
 - 强制基于 diff 给出证据
@@ -756,7 +756,7 @@ interface LlmReviewRequest {
 - 控制评论数量，避免噪声
 - 优先高价值问题：正确性、安全、性能、并发、可维护性
 
-## 10.2 System Prompt 要点
+### 10.2 System Prompt 要点
 
 建议包含：
 
@@ -768,7 +768,7 @@ interface LlmReviewRequest {
 - 每条评论必须引用 `diff_line_ref`
 - 必须返回 JSON，符合给定 schema
 
-## 10.3 Structured Output JSON Schema
+### 10.3 Structured Output JSON Schema
 
 ```json
 {
@@ -828,7 +828,7 @@ interface LlmReviewRequest {
 }
 ```
 
-## 10.4 LLM 结果标准化类型
+### 10.4 LLM 结果标准化类型
 
 ```ts
 interface AiReviewComment {
@@ -848,7 +848,7 @@ interface AiReviewComment {
 
 ## 11. 缓存与检索增强设计
 
-## 11.1 缓存策略
+### 11.1 缓存策略
 
 缓存键建议：
 
@@ -869,7 +869,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 - 标记 `is_cached = true`
 - 不重复调用 LLM
 
-## 11.2 pgvector 增强
+### 11.2 pgvector 增强
 
 存储对象：
 
@@ -896,7 +896,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 
 下述接口默认前缀为 `/api`。
 
-## 12.1 创建审查任务
+### 12.1 创建审查任务
 
 ### 请求
 
@@ -926,7 +926,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 }
 ```
 
-## 12.2 查询任务详情
+### 12.2 查询任务详情
 
 ### 请求
 
@@ -947,7 +947,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 }
 ```
 
-## 12.3 查询 PR 审查结果
+### 12.3 查询 PR 审查结果
 
 ### 请求
 
@@ -994,7 +994,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 }
 ```
 
-## 12.4 获取文件 diff 详情
+### 12.4 获取文件 diff 详情
 
 ### 请求
 
@@ -1025,7 +1025,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 }
 ```
 
-## 12.5 回写 GitHub 评论
+### 12.5 回写 GitHub 评论
 
 ### 请求
 
@@ -1054,12 +1054,12 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 
 命名建议使用 Socket.IO 事件。
 
-## 13.1 连接方式
+### 13.1 连接方式
 
 - namespace: `/review-jobs`
 - room: `job:{jobId}`
 
-## 13.2 事件定义
+### 13.2 事件定义
 
 ### `review_job_started`
 
@@ -1119,7 +1119,7 @@ provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_versio
 
 ## 14. 队列契约设计
 
-## 14.1 BullMQ Job Payload
+### 14.1 BullMQ Job Payload
 
 ```ts
 interface ReviewSliceJobPayload {
@@ -1143,7 +1143,7 @@ interface ReviewSliceJobPayload {
 }
 ```
 
-## 14.2 BullMQ 配置建议
+### 14.2 BullMQ 配置建议
 
 ```ts
 {
@@ -1161,7 +1161,7 @@ interface ReviewSliceJobPayload {
 
 ## 15. 前端设计
 
-## 15.1 页面结构
+### 15.1 页面结构
 
 建议一期包含三个主区域：
 
@@ -1169,7 +1169,7 @@ interface ReviewSliceJobPayload {
 2. 左侧文件审查列表
 3. 右侧 Diff Viewer + 评论联动区
 
-## 15.2 Zustand Store 设计
+### 15.2 Zustand Store 设计
 
 ```ts
 interface ReviewStore {
@@ -1196,7 +1196,7 @@ interface ReviewStore {
 }
 ```
 
-## 15.3 前端交互流程
+### 15.3 前端交互流程
 
 ### 文件点击联动
 
@@ -1220,7 +1220,7 @@ interface ReviewStore {
 2. 反向更新左侧选中项
 3. 左侧列表滚动到对应文件或评论
 
-## 15.4 Diff Viewer 实现建议
+### 15.4 Diff Viewer 实现建议
 
 ### 选型
 
@@ -1239,7 +1239,7 @@ const target = document.querySelector(`[data-line="101"]`);
 target?.scrollIntoView({ block: "center", behavior: "smooth" });
 ```
 
-## 15.5 流式进度 UI
+### 15.5 流式进度 UI
 
 建议交互：
 
@@ -1252,18 +1252,18 @@ target?.scrollIntoView({ block: "center", behavior: "smooth" });
 
 ## 16. GitHub 回写设计
 
-## 16.1 写回模式
+### 16.1 写回模式
 
 一期建议只支持“用户手动确认后回写”，不默认自动推送评论。
 
-## 16.2 写回前置校验
+### 16.2 写回前置校验
 
 - 必须具备 `line_start`
 - 必须具备 `file_path`
 - 评论未被标记为 `unmapped`
 - PR head SHA 未变化
 
-## 16.3 回写 API 选择
+### 16.3 回写 API 选择
 
 使用 GitHub Pull Request Review Comments API。
 
@@ -1280,7 +1280,7 @@ target?.scrollIntoView({ block: "center", behavior: "smooth" });
 
 ## 17. 本地 Docker Compose 方案
 
-## 17.1 服务清单
+### 17.1 服务清单
 
 本地只需要编排基础依赖，不需要容器化前后端开发服务器也能工作。
 
@@ -1293,7 +1293,7 @@ target?.scrollIntoView({ block: "center", behavior: "smooth" });
 
 前端与 NestJS 可在宿主机本地启动，便于热更新。
 
-## 17.2 端口规划
+### 17.2 端口规划
 
 | 服务 | 端口 |
 | --- | --- |
@@ -1303,7 +1303,7 @@ target?.scrollIntoView({ block: "center", behavior: "smooth" });
 | MinIO Console | 9001 |
 | Rule Engine | 8001 |
 
-## 17.3 `docker-compose.yml` 示例
+### 17.3 `docker-compose.yml` 示例
 
 ```yaml
 version: "3.9"
@@ -1362,7 +1362,7 @@ volumes:
   minio_data:
 ```
 
-## 17.4 本地启动顺序
+### 17.4 本地启动顺序
 
 1. `docker compose -f infra/docker-compose.yml up -d`
 2. 初始化 `.env`
@@ -1426,7 +1426,7 @@ WS_NAMESPACE=/review-jobs
 
 ## 20. 开发里程碑建议
 
-## 20.1 M1：骨架期
+### 20.1 M1：骨架期
 
 交付：
 
@@ -1435,7 +1435,7 @@ WS_NAMESPACE=/review-jobs
 - PostgreSQL / Redis / MinIO 本地环境
 - 核心表建表
 
-## 20.2 M2：PR 拉取与 diff 解析
+### 20.2 M2：PR 拉取与 diff 解析
 
 交付：
 
@@ -1444,7 +1444,7 @@ WS_NAMESPACE=/review-jobs
 - `DiffHunk` 解析
 - 行号映射
 
-## 20.3 M3：分析链路打通
+### 20.3 M3：分析链路打通
 
 交付：
 
@@ -1453,7 +1453,7 @@ WS_NAMESPACE=/review-jobs
 - LLM Gateway 接入
 - 结构化解析入库
 
-## 20.4 M4：前端联动
+### 20.4 M4：前端联动
 
 交付：
 
@@ -1462,7 +1462,7 @@ WS_NAMESPACE=/review-jobs
 - 评论联动
 - WebSocket 实时更新
 
-## 20.5 M5：增强能力
+### 20.5 M5：增强能力
 
 交付：
 
@@ -1496,7 +1496,7 @@ WS_NAMESPACE=/review-jobs
 
 ## 22. 关键风险与实现建议
 
-## 22.1 高风险点
+### 22.1 高风险点
 
 ### 行号映射
 
@@ -1510,7 +1510,7 @@ WS_NAMESPACE=/review-jobs
 
 如果不用 structured output，后处理会非常脆弱。
 
-## 22.2 建议的实现顺序
+### 22.2 建议的实现顺序
 
 建议按以下顺序开发，而不是并行铺开：
 
@@ -1536,4 +1536,3 @@ WS_NAMESPACE=/review-jobs
 - 行号映射 -> 前端联动与 GitHub 回写
 
 只要把 `diff_line_ref`、任务编排、结构化输出这三件事先做稳，这个 AI PR Review 助手就能具备真正可用的产品雏形。
-
