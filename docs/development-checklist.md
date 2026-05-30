@@ -21,21 +21,21 @@
 
 ## 2. 模块执行清单总览
 
-| 模块                                    | 状态                   | 前置依赖       | 建议优先级 |
-| --------------------------------------- | ---------------------- | -------------- | ---------- |
-| M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
-| M1 仓库接入与 GitHub 认证               | 已完成                 | M0             | 已完成     |
-| M2 仓库扫描任务编排                     | 已完成                 | M0, M1         | 已完成     |
-| M3 结构化索引构建                       | 待开发                 | M0, M2         | P0         |
-| M4 语义语料构建与检索                   | 待开发                 | M0, M2         | P1         |
-| M5 PR 拉取与 Diff Core                  | 待开发                 | M0, M1         | P0         |
-| M6 规则引擎接入                         | 待开发                 | M0, M5         | P1         |
-| M7 首轮审查与 Triage                    | 部分有骨架             | M0, M5, M6     | P1         |
-| M8 上下文检索与二轮审查                 | 部分有骨架             | M0, M3, M4, M7 | P1         |
-| M9 评论准入、质量评分与聚合             | 部分有骨架             | M0, M7, M8     | P1         |
-| M10 API 查询面与 Web 工作台             | 待开发                 | M0, M5, M9     | P2         |
-| M11 GitHub 回写                         | 待开发                 | M0, M9         | P2         |
-| M12 Observability、LangSmith 与评估回归 | 待开发                 | M7, M8, M9     | P2         |
+| 模块                                    | 状态                        | 前置依赖       | 建议优先级 |
+| --------------------------------------- | --------------------------- | -------------- | ---------- |
+| M0 契约与持久化真源                     | 已完成基础版，持续维护      | 无             | 已完成     |
+| M1 仓库接入与 GitHub 认证               | 开发中（实现完成，待提 PR） | M0             | P0         |
+| M2 仓库扫描任务编排                     | 待开发                      | M0, M1         | P0         |
+| M3 结构化索引构建                       | 待开发                      | M0, M2         | P0         |
+| M4 语义语料构建与检索                   | 待开发                      | M0, M2         | P1         |
+| M5 PR 拉取与 Diff Core                  | 已完成基础版                | M0, M1         | P0         |
+| M6 规则引擎接入                         | 已完成基础版                | M0, M5         | P1         |
+| M7 首轮审查与 Triage                    | 已完成基础版                | M0, M5, M6     | P1         |
+| M8 上下文检索与二轮审查                 | 部分有骨架                  | M0, M3, M4, M7 | P1         |
+| M9 评论准入、质量评分与聚合             | 部分有骨架                  | M0, M7, M8     | P1         |
+| M10 API 查询面与 Web 工作台             | 待开发                      | M0, M5, M9     | P2         |
+| M11 GitHub 回写                         | 待开发                      | M0, M9         | P2         |
+| M12 Observability、LangSmith 与评估回归 | 待开发                      | M7, M8, M9     | P2         |
 
 ## 3. 状态维护规则
 
@@ -88,7 +88,7 @@
 
 ### 当前判断
 
-已完成并合并，进入后续模块消费阶段。
+实现、fixture 和真实 smoke 已完成，当前状态为待提交 PR。
 
 ### Issue 清单
 
@@ -124,31 +124,27 @@
 
 ## M2. 仓库扫描任务编排
 
-### 当前判断
-
-已完成。当前已具备 API 触发、BullMQ 入队、Worker 消费、状态流转、去重和调试查询闭环。
-
 ### Issue 清单
 
-- [x] 审查 `RepositoryScanRequest` 和相关事件契约
-- [x] 在 `apps/api` 新增 `POST /api/repositories/:id/scan`
-- [x] 创建 `repository_scans` 记录
-- [x] 在 Worker 中新增 scan job consumer
-- [x] 接入 BullMQ queue 定义
-- [x] 实现状态流转：`pending -> running -> done/failed`
-- [x] 实现幂等控制，避免重复扫描并发失控
-- [x] 推送 `repository_scan_started`
-- [x] 推送 `repository_scan_completed`
-- [x] 推送 `repository_scan_failed`
-- [x] 增加失败重试策略
-- [x] 增加 scan 结果查询接口或调试入口
+- [ ] 审查 `RepositoryScanRequest` 和相关事件契约
+- [ ] 在 `apps/api` 新增 `POST /api/repositories/:id/scan`
+- [ ] 创建 `repository_scans` 记录
+- [ ] 在 Worker 中新增 scan job consumer
+- [ ] 接入 BullMQ queue 定义
+- [ ] 实现状态流转：`pending -> running -> done/failed`
+- [ ] 实现幂等控制，避免重复扫描并发失控
+- [ ] 推送 `repository_scan_started`
+- [ ] 推送 `repository_scan_completed`
+- [ ] 推送 `repository_scan_failed`
+- [ ] 增加失败重试策略
+- [ ] 增加 scan 结果查询接口或调试入口
 
 ### 最小验证
 
-- [x] API 触发后 scan 记录写库
-- [x] Worker 可消费任务
-- [x] 状态从 `pending` 走到 `done`
-- [x] 重复触发不会打爆队列
+- [ ] API 触发后 scan 记录写库
+- [ ] Worker 可消费任务
+- [ ] 状态从 `pending` 走到 `done`
+- [ ] 重复触发不会打爆队列
 
 ### 模块完成定义
 
@@ -159,7 +155,7 @@
 
 ### LangSmith
 
-- [x] 不接
+- [ ] 不接
 
 ## M3. 结构化索引构建
 
@@ -234,25 +230,29 @@
 
 ## M5. PR 拉取与 Diff Core
 
+### 当前判断
+
+基础版已完成：已提供 GitHub PR 元信息和文件 patch 拉取封装、`packages/diff-core` patch 解析、稳定 `diffLineRef` 和 `lineRefMap`，并补充 diff fixture 与验证脚本。
+
 ### Issue 清单
 
-- [ ] 新建 `packages/diff-core`
-- [ ] 设计 `DiffParseResult` 使用边界
-- [ ] 封装 GitHub GraphQL PR 元信息拉取
-- [ ] 封装 GitHub REST 文件 patch 拉取
+- [x] 新建 `packages/diff-core`
+- [x] 设计 `DiffParseResult` 使用边界
+- [x] 封装 GitHub REST PR 元信息拉取
+- [x] 封装 GitHub REST 文件 patch 拉取
 - [ ] 写入 `pull_requests`
-- [ ] 解析 patch 为 `DiffHunk[]`
-- [ ] 生成 `diffLineRef`
-- [ ] 建 old/new 行号映射
-- [ ] 建 hunk 映射
-- [ ] 增加 patch 为空文件的兜底逻辑
-- [ ] 补 PR fixture 和 diff fixture
+- [x] 解析 patch 为 `DiffHunk[]`
+- [x] 生成 `diffLineRef`
+- [x] 建 old/new 行号映射
+- [x] 建 hunk 映射
+- [x] 增加 patch 为空文件的兜底逻辑
+- [x] 补 PR fixture 和 diff fixture
 
 ### 最小验证
 
-- [ ] 对真实 PR 能拉到文件和 patch
-- [ ] 解析结果中存在稳定 `diffLineRef`
-- [ ] comment 可依据 `diffLineRef` 定位
+- [x] 对真实 PR 能拉到文件和 patch
+- [x] 解析结果中存在稳定 `diffLineRef`
+- [x] comment 可依据 `diffLineRef` 定位
 
 ### 模块完成定义
 
@@ -261,27 +261,31 @@
 
 ### LangSmith
 
-- [ ] 不接
+- [x] 不接
 
 ## M6. 规则引擎接入
 
+### 当前判断
+
+基础版已完成：已提供 Python sidecar `/scan` 入口、semgrep/eslint 输出标准化逻辑、TS 侧 `RuleViolation` 标准化函数，并把规则结果纳入首轮 review pipeline 输入。
+
 ### Issue 清单
 
-- [ ] 审查 `RuleViolation` 契约
-- [ ] 在 `services/rule-engine` 包装 semgrep 执行入口
-- [ ] 对 TS/JS 增加 eslint 执行入口
-- [ ] 实现规则输出标准化
-- [ ] 增加规则执行超时控制
-- [ ] 增加规则执行失败兜底
+- [x] 审查 `RuleViolation` 契约
+- [x] 在 `services/rule-engine` 包装 semgrep 执行入口
+- [x] 对 TS/JS 增加 eslint 执行入口
+- [x] 实现规则输出标准化
+- [x] 增加规则执行超时控制
+- [x] 增加规则执行失败兜底
 - [ ] 支持 repo/module 级规则配置入口
-- [ ] 将规则结果并入 review pipeline 输入
-- [ ] 补 rule result fixture
+- [x] 将规则结果并入 review pipeline 输入
+- [x] 补 rule result fixture
 
 ### 最小验证
 
 - [ ] 真实代码可跑出至少一条规则结果
-- [ ] 结果可 parse 为 `RuleViolationSchema`
-- [ ] 规则失败不会阻断整个 review job
+- [x] 结果可 parse 为 `RuleViolationSchema`
+- [x] 规则失败不会阻断整个 review job
 
 ### 模块完成定义
 
@@ -290,29 +294,33 @@
 
 ### LangSmith
 
-- [ ] 可选记录 rule hit 摘要
-- [ ] 不记录完整规则正文
+- [x] 可选记录 rule hit 摘要
+- [x] 不记录完整规则正文
 
 ## M7. 首轮审查与 Triage
 
+### 当前判断
+
+基础版已完成：已建立首轮审查输入对象、基于 diff 与规则命中的启发式 first-pass decision、`ReviewTriageDecision` 结构化输出，以及 worker pipeline 中的 triage evaluation 和 provisional findings 保留。
+
 ### Issue 清单
 
-- [ ] 审查首轮 prompt 输入对象
+- [x] 审查首轮 prompt 输入对象
 - [ ] 新建 `packages/prompt-builder`
 - [ ] 新建 `packages/llm-gateway`
-- [ ] 实现 first-pass prompt 模板
-- [ ] 约束模型输出 `ReviewTriageDecision`
-- [ ] 在 Worker 中接入 first-pass review
-- [ ] 在 Worker 中接入 triage evaluation
+- [x] 实现 first-pass prompt 模板
+- [x] 约束模型输出 `ReviewTriageDecision`
+- [x] 在 Worker 中接入 first-pass review
+- [x] 在 Worker 中接入 triage evaluation
 - [ ] 将 triage 结果写入 `file_reviews`
-- [ ] 保留 provisional findings
+- [x] 保留 provisional findings
 - [ ] 补高风险 / 无问题 / 证据不足 3 类 fixture
 
 ### 最小验证
 
-- [ ] 真实或 fixture PR 可返回结构化 triage 决策
-- [ ] 高风险但证据不足场景返回 `need_more_context`
-- [ ] 无问题场景不会硬造评论
+- [x] 真实或 fixture PR 可返回结构化 triage 决策
+- [x] 高风险但证据不足场景返回 `need_more_context`
+- [x] 无问题场景不会硬造评论
 
 ### 模块完成定义
 
