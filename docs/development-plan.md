@@ -134,6 +134,10 @@
 
 ## M1. 仓库接入与 GitHub 认证
 
+### 当前状态
+
+开发中（实现完成，待提 PR）。
+
 ### 目标
 
 输入一个 GitHub 仓库，系统能保存仓库记录，并具备后续扫描所需的访问能力。
@@ -159,6 +163,14 @@
 - 能接入一个可访问仓库并成功写库。
 - 对不存在仓库、无权限仓库能返回明确错误。
 - API 返回 shape 与 `RepositoryConnectResponseSchema` 一致。
+
+### 当前落地结果
+
+- 已新增 `POST /api/repositories/connect`。
+- 已补 GitHub client、Postgres store 和 connect service。
+- 已补 connect success / failure fixtures。
+- 已增加控制器级验证脚本和真实 smoke 脚本。
+- 已完成真实 GitHub 仓库接入、错误仓库返回和 `repositories` 落库验证。
 
 ### LangSmith
 

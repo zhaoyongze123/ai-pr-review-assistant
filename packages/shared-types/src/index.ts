@@ -209,6 +209,25 @@ export type RepositoryConnectResponse = z.infer<
   typeof RepositoryConnectResponseSchema
 >;
 
+export const ApiErrorCodeSchema = z.enum([
+  "VALIDATION_ERROR",
+  "GITHUB_UNAUTHORIZED",
+  "REPOSITORY_NOT_FOUND",
+  "REPOSITORY_FORBIDDEN",
+  "DATABASE_ERROR",
+  "INTERNAL_ERROR",
+]);
+export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
+
+export const ApiErrorResponseSchema = z.object({
+  error: z.object({
+    code: ApiErrorCodeSchema,
+    message: NonEmptyStringSchema,
+    details: MetadataSchema.optional(),
+  }),
+});
+export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+
 export const RepositoryScanRequestSchema = z.object({
   repositoryId: UuidSchema,
   scanType: RepositoryScanTypeSchema.default("full"),

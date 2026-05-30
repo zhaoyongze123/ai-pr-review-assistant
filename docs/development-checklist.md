@@ -21,21 +21,21 @@
 
 ## 2. 模块执行清单总览
 
-| 模块                                    | 状态                   | 前置依赖       | 建议优先级 |
-| --------------------------------------- | ---------------------- | -------------- | ---------- |
-| M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
-| M1 仓库接入与 GitHub 认证               | 待开发                 | M0             | P0         |
-| M2 仓库扫描任务编排                     | 待开发                 | M0, M1         | P0         |
-| M3 结构化索引构建                       | 待开发                 | M0, M2         | P0         |
-| M4 语义语料构建与检索                   | 待开发                 | M0, M2         | P1         |
-| M5 PR 拉取与 Diff Core                  | 待开发                 | M0, M1         | P0         |
-| M6 规则引擎接入                         | 待开发                 | M0, M5         | P1         |
-| M7 首轮审查与 Triage                    | 部分有骨架             | M0, M5, M6     | P1         |
-| M8 上下文检索与二轮审查                 | 部分有骨架             | M0, M3, M4, M7 | P1         |
-| M9 评论准入、质量评分与聚合             | 部分有骨架             | M0, M7, M8     | P1         |
-| M10 API 查询面与 Web 工作台             | 待开发                 | M0, M5, M9     | P2         |
-| M11 GitHub 回写                         | 待开发                 | M0, M9         | P2         |
-| M12 Observability、LangSmith 与评估回归 | 待开发                 | M7, M8, M9     | P2         |
+| 模块                                    | 状态                        | 前置依赖       | 建议优先级 |
+| --------------------------------------- | --------------------------- | -------------- | ---------- |
+| M0 契约与持久化真源                     | 已完成基础版，持续维护      | 无             | 已完成     |
+| M1 仓库接入与 GitHub 认证               | 开发中（实现完成，待提 PR） | M0             | P0         |
+| M2 仓库扫描任务编排                     | 待开发                      | M0, M1         | P0         |
+| M3 结构化索引构建                       | 待开发                      | M0, M2         | P0         |
+| M4 语义语料构建与检索                   | 待开发                      | M0, M2         | P1         |
+| M5 PR 拉取与 Diff Core                  | 待开发                      | M0, M1         | P0         |
+| M6 规则引擎接入                         | 待开发                      | M0, M5         | P1         |
+| M7 首轮审查与 Triage                    | 部分有骨架                  | M0, M5, M6     | P1         |
+| M8 上下文检索与二轮审查                 | 部分有骨架                  | M0, M3, M4, M7 | P1         |
+| M9 评论准入、质量评分与聚合             | 部分有骨架                  | M0, M7, M8     | P1         |
+| M10 API 查询面与 Web 工作台             | 待开发                      | M0, M5, M9     | P2         |
+| M11 GitHub 回写                         | 待开发                      | M0, M9         | P2         |
+| M12 Observability、LangSmith 与评估回归 | 待开发                      | M7, M8, M9     | P2         |
 
 ## 3. 状态维护规则
 
@@ -86,26 +86,30 @@
 
 ## M1. 仓库接入与 GitHub 认证
 
+### 当前判断
+
+实现、fixture 和真实 smoke 已完成，当前状态为待提交 PR。
+
 ### Issue 清单
 
-- [ ] 在 `shared-types` 审查并确认 connect 请求 / 响应契约足够
-- [ ] 在 `.env.example` 补充 GitHub 接入必要环境变量说明
-- [ ] 新建 GitHub client 封装层，统一封装认证和基础请求
-- [ ] 在 `apps/api` 新增 `POST /api/repositories/connect`
-- [ ] 实现仓库存在性校验
-- [ ] 实现权限校验
-- [ ] 拉取默认分支和 clone URL
-- [ ] 写入 `repositories` 表
-- [ ] 返回 `RepositoryConnectResponse`
-- [ ] 补一个 connect 成功 fixture
-- [ ] 补一个 connect 失败 fixture
-- [ ] 增加 API 层成功 / 失败请求验证
+- [x] 在 `shared-types` 审查并确认 connect 请求 / 响应契约足够
+- [x] 在 `.env.example` 补充 GitHub 接入必要环境变量说明
+- [x] 新建 GitHub client 封装层，统一封装认证和基础请求
+- [x] 在 `apps/api` 新增 `POST /api/repositories/connect`
+- [x] 实现仓库存在性校验
+- [x] 实现权限校验
+- [x] 拉取默认分支和 clone URL
+- [x] 写入 `repositories` 表
+- [x] 返回 `RepositoryConnectResponse`
+- [x] 补一个 connect 成功 fixture
+- [x] 补一个 connect 失败 fixture
+- [x] 增加 API 层成功 / 失败请求验证
 
 ### 最小验证
 
-- [ ] 可接入一个真实可访问仓库
-- [ ] 错误仓库返回明确错误
-- [ ] `npm run check` 通过
+- [x] 可接入一个真实可访问仓库
+- [x] 错误仓库返回明确错误
+- [x] `npm run check` 通过
 
 ### 模块完成定义
 
@@ -116,7 +120,7 @@
 
 ### LangSmith
 
-- [ ] 不接
+- [x] 不接
 
 ## M2. 仓库扫描任务编排
 

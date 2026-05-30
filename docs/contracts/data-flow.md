@@ -32,6 +32,7 @@ flowchart TD
 输出：
 
 - `RepositoryConnectResponse`
+- `ApiErrorResponse`
 
 ### 阶段 2：仓库扫描
 
