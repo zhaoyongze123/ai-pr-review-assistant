@@ -21,21 +21,21 @@
 
 ## 2. 模块执行清单总览
 
-| 模块                                    | 状态                                 | 前置依赖       | 建议优先级 |
-| --------------------------------------- | ------------------------------------ | -------------- | ---------- |
-| M0 契约与持久化真源                     | 已完成基础版，持续维护               | 无             | 已完成     |
-| M1 仓库接入与 GitHub 认证               | 已完成                               | M0             | 已完成     |
-| M2 仓库扫描任务编排                     | 已完成                               | M0, M1         | 已完成     |
-| M3 结构化索引构建                       | 已完成                               | M0, M2         | 已完成     |
-| M4 语义语料构建与检索                   | 已完成                               | M0, M2         | 已完成     |
-| M5 PR 拉取与 Diff Core                  | 已完成                               | M0, M1         | P0         |
-| M6 规则引擎接入                         | 已完成                               | M0, M5         | P1         |
-| M7 首轮审查与 Triage                    | 已完成                               | M0, M5, M6     | P1         |
-| M8 上下文检索与二轮审查                 | 已完成                               | M0, M3, M4, M7 | 已完成     |
-| M9 评论准入、质量评分与聚合             | 部分有骨架                           | M0, M7, M8     | P1         |
-| M10 API 查询面与 Web 工作台             | 待开发                               | M0, M5, M9     | P2         |
-| M11 GitHub 回写                         | 待开发                               | M0, M9         | P2         |
-| M12 Observability、LangSmith 与评估回归 | 部分完成，已验收到 second-pass trace | M7, M8, M9     | P2         |
+| 模块                                    | 状态                                  | 前置依赖       | 建议优先级 |
+| --------------------------------------- | ------------------------------------- | -------------- | ---------- |
+| M0 契约与持久化真源                     | 已完成基础版，持续维护                | 无             | 已完成     |
+| M1 仓库接入与 GitHub 认证               | 已完成                                | M0             | 已完成     |
+| M2 仓库扫描任务编排                     | 已完成                                | M0, M1         | 已完成     |
+| M3 结构化索引构建                       | 已完成                                | M0, M2         | 已完成     |
+| M4 语义语料构建与检索                   | 已完成                                | M0, M2         | 已完成     |
+| M5 PR 拉取与 Diff Core                  | 已完成                                | M0, M1         | P0         |
+| M6 规则引擎接入                         | 已完成                                | M0, M5         | P1         |
+| M7 首轮审查与 Triage                    | 已完成                                | M0, M5, M6     | P1         |
+| M8 上下文检索与二轮审查                 | 已完成                                | M0, M3, M4, M7 | 已完成     |
+| M9 评论准入、质量评分与聚合             | 已完成                                | M0, M7, M8     | 已完成     |
+| M10 API 查询面与 Web 工作台             | 待开发                                | M0, M5, M9     | P2         |
+| M11 GitHub 回写                         | 待开发                                | M0, M9         | P2         |
+| M12 Observability、LangSmith 与评估回归 | 部分完成，已验收到 gate/summary trace | M7, M8, M9     | P2         |
 
 ## 3. 状态维护规则
 
@@ -387,22 +387,22 @@
 
 ### Issue 清单
 
-- [ ] 审查 `CommentAdmissionDecision` 与 `QualityScoreBreakdown`
-- [ ] 完善 admission rules
-- [ ] 完善低信号短语惩罚
-- [ ] 增加 duplicate fingerprint 去重
-- [ ] 聚合 file review summary
-- [ ] 聚合 PR summary
-- [ ] 生成 merge recommendation
-- [ ] 写入 `review_comments`
-- [ ] 生成 `ReviewAggregateResult`
-- [ ] 补 accepted / suppressed / duplicate 3 类 fixture
+- [x] 审查 `CommentAdmissionDecision` 与 `QualityScoreBreakdown`
+- [x] 完善 admission rules
+- [x] 完善低信号短语惩罚
+- [x] 增加 duplicate fingerprint 去重
+- [x] 聚合 file review summary
+- [x] 聚合 PR summary
+- [x] 生成 merge recommendation
+- [x] 写入 `review_comments`
+- [x] 生成 `ReviewAggregateResult`
+- [x] 补 accepted / suppressed / duplicate 3 类 fixture
 
 ### 最小验证
 
-- [ ] 低信号评论被压制
-- [ ] 高价值评论带锚点和证据链
-- [ ] aggregate result 可直接提供给 API
+- [x] 低信号评论被压制
+- [x] 高价值评论带锚点和证据链
+- [x] aggregate result 可直接提供给 API
 
 ### 模块完成定义
 
@@ -411,10 +411,16 @@
 
 ### LangSmith
 
-- [ ] trace admission gate
-- [ ] trace quality scoring
-- [ ] trace final aggregate summary
+- [x] trace admission gate
+- [x] trace quality scoring
+- [x] trace final aggregate summary
 - [ ] 为后续 evaluation 预留 dataset 输出
+
+### 验收说明
+
+- [x] `npm run validate:review-aggregation --workspace=@ai-pr-review/api`
+- [x] 真实 `first-pass-review` smoke 已验收 `review_comments` 落库与 `aggregateResult`
+- [x] 真实 LangSmith smoke 已验收 `quality-scoring` / `comment-admission` / `final-aggregate-summary`
 
 ## M10. API 查询面与 Web 工作台
 
@@ -483,7 +489,9 @@
 
 - 首轮链路已接入并验收 `review-job -> rule-engine-scan -> review-file -> first-pass-review`
 - 已验收 `review-job -> review-file -> context-fetch-plan -> context-fetch-summary -> second-pass-review`
-- dataset、评估脚本、M9 gate/quality trace 仍未完成
+- 已验收 `review-job -> review-file -> quality-scoring -> comment-admission`
+- 已验收 `review-job -> final-aggregate-summary`
+- dataset、评估脚本和 Worker 侧统一 tracer 抽象仍未完成
 
 ### Issue 清单
 
@@ -508,7 +516,7 @@
 
 - [x] 关闭 LangSmith 时系统照常运行
 - [x] 打开 LangSmith 时可看到 file-review 级 trace
-- [ ] trace 中能区分 first-pass / context fetch / second-pass / gate / score
+- [x] trace 中能区分 first-pass / context fetch / second-pass / gate / score
 - [ ] 至少一套 dataset 和一套回归评估可运行
 
 ### 模块完成定义

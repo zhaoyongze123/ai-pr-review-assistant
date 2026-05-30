@@ -9,6 +9,7 @@
     "lint": "echo \"api lint placeholder\"",
     "check": "tsc -p tsconfig.json --noEmit",
     "validate:repository-connect": "tsx --tsconfig tsconfig.json src/modules/repositories/repository-connect.validation.ts",
+    "validate:review-aggregation": "tsx --tsconfig tsconfig.json src/modules/reviews/review-aggregation.validation.ts",
     "smoke:repository-connect": "tsx --tsconfig tsconfig.json src/modules/repositories/repository-connect.integration.ts",
     "smoke:rule-engine": "tsx --tsconfig tsconfig.json src/modules/reviews/rule-engine.integration.ts",
     "smoke:first-pass-review": "tsx --tsconfig tsconfig.json src/modules/reviews/first-pass-review.integration.ts",

@@ -371,7 +371,7 @@ create table if not exists review_comments (
   message text not null,
   suggestion text,
   file_path text not null,
-  diff_line_ref varchar(64),
+  diff_line_ref text,
   line_start int,
   line_end int,
   old_line_start int,

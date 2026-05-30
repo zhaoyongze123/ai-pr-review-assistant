@@ -12,6 +12,11 @@ const LOW_SIGNAL_PATTERNS = [
   "潜在风险",
   "最好补一下日志",
   "建议增加校验",
+  "建议关注",
+  "需要确认一下",
+  "可能有问题",
+  "也许可以",
+  "注意一下",
 ];
 
 function clamp(value: number) {
@@ -51,7 +56,11 @@ export function scoreCommentCandidate(
       (candidate.category !== "style" ? 20 : 0),
   );
 
-  const novelty = clamp(candidate.duplicateFingerprint ? 25 : 90);
+  const novelty = clamp(
+    (candidate.duplicateFingerprint ? 70 : 55) +
+      (candidate.evidenceRefs.length >= 2 ? 10 : 0) +
+      (candidate.title.length >= 14 ? 10 : 0),
+  );
 
   const noisePenalty = clamp(
     LOW_SIGNAL_PATTERNS.reduce(
@@ -59,16 +68,17 @@ export function scoreCommentCandidate(
       0,
     ) +
       (candidate.category === "style" ? 20 : 0) +
-      ((candidate.confidence ?? 0.5) < 0.5 ? 15 : 0),
+      ((candidate.confidence ?? 0.5) < 0.55 ? 15 : 0) +
+      (candidate.message.length < 24 ? 12 : 0),
   );
 
   const total = clamp(
-    evidenceStrength * 0.3 +
-      impactClarity * 0.25 +
-      actionability * 0.2 +
-      specificity * 0.15 +
-      novelty * 0.1 -
-      noisePenalty,
+    evidenceStrength * 0.28 +
+      impactClarity * 0.24 +
+      actionability * 0.18 +
+      specificity * 0.18 +
+      novelty * 0.12 -
+      noisePenalty * 0.35,
   );
 
   return QualityScoreBreakdownSchema.parse({

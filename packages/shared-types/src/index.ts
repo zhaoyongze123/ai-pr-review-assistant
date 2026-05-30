@@ -920,8 +920,11 @@ export const FirstPassReviewRunResponseSchema = z.object({
   ruleViolations: z.array(RuleViolationSchema).default([]),
   ruleFailures: z.array(RuleEngineScanFailureSchema).default([]),
   fileReviews: z.array(FileReviewSchema).default([]),
+  comments: z.array(ReviewCommentSchema).default([]),
+  summary: PRSummarySchema.optional(),
   llmCalls: z.array(LlmCallLogSchema).default([]),
   files: z.array(FirstPassReviewFileResultSchema).default([]),
+  aggregateResult: ReviewAggregateResultSchema,
 });
 export type FirstPassReviewRunResponse = z.infer<
   typeof FirstPassReviewRunResponseSchema
