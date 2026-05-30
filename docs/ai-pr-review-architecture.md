@@ -788,10 +788,10 @@ PR 元信息。
 
 当前 `infra/docker-compose.yml` 已确定如下服务：
 
-- `postgres`：`pgvector/pgvector:pg16`
-- `redis`：`redis:7-alpine`
-- `minio`：`minio/minio`
-- `rule-engine`：`python:3.14-slim`
+- `postgres`：`pgvector/pgvector:pg16`，宿主机端口 `55432`
+- `redis`：`redis:7-alpine`，宿主机端口 `56379`
+- `minio`：`minio/minio`，宿主机端口 `59000/59001`
+- `rule-engine`：`python:3.14-slim`，宿主机端口 `58001`
 
 ### 13.2 建议的本地运行职责
 

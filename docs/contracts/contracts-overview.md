@@ -61,6 +61,9 @@ Mock 真源：
 ### 仓库接入与语义地图
 
 - `Repository`
+- `RepositoryConnectRequest`
+- `RepositoryConnectResponse`
+- `ApiErrorResponse`
 - `RepositoryScan`
 - `RepositoryFile`
 - `Symbol`

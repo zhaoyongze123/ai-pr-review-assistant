@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "REPOSITORY_FORBIDDEN",
+    "message": "当前 token 没有访问该仓库的权限",
+    "details": {
+      "owner": "acme-inc",
+      "repo": "private-repo"
+    }
+  }
+}
