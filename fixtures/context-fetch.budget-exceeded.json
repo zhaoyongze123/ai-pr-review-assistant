@@ -1,0 +1,36 @@
+{
+  "status": "budget_exceeded",
+  "reason": "上下文检索计划超过预算，不继续扩张上下文",
+  "plannedCalls": [
+    {
+      "toolName": "find_symbol_definition",
+      "query": "AuthService.refreshToken",
+      "estimatedFiles": 1,
+      "estimatedTokens": 800
+    },
+    {
+      "toolName": "find_callers",
+      "query": "AuthService.refreshToken",
+      "estimatedFiles": 2,
+      "estimatedTokens": 1200
+    },
+    {
+      "toolName": "find_related_tests",
+      "query": "auth.service.spec.ts",
+      "estimatedFiles": 2,
+      "estimatedTokens": 1200
+    }
+  ],
+  "artifacts": [],
+  "remainingBudget": {
+    "maxRounds": 1,
+    "maxToolCalls": 1,
+    "maxExtraFiles": 1,
+    "maxCallDepth": 1,
+    "maxExtraTokens": 900,
+    "usedRounds": 0,
+    "usedToolCalls": 0,
+    "usedExtraFiles": 0,
+    "usedExtraTokens": 0
+  }
+}

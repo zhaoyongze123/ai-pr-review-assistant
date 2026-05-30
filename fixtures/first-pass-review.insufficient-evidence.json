@@ -1,0 +1,15 @@
+{
+  "decision": "insufficient_evidence",
+  "confidence": 0.44,
+  "riskLevel": "medium",
+  "rationale": "只看到局部 diff，缺少调用方、测试或业务约束证据，当前不应编造评论。",
+  "evidenceCoverage": {
+    "modifiedSymbol": false,
+    "localContext": true,
+    "callers": false,
+    "callees": false,
+    "tests": false,
+    "schema": false
+  },
+  "provisionalFindings": []
+}

@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { HealthController } from "./health.controller.js";
+import { ContextFetchLogStoreService } from "./modules/context/context-fetch-log-store.service.js";
 import { ContextFetcherService } from "./modules/context/context-fetcher.service.js";
+import { RepositoryContextStoreService } from "./modules/context/repository-context-store.service.js";
 import { ApiConfigService } from "./modules/repositories/api-config.service.js";
 import { GitHubClientService } from "./modules/repositories/github-client.service.js";
 import { RepositoriesController } from "./modules/repositories/repositories.controller.js";
@@ -8,6 +10,13 @@ import { RepositoryConnectService } from "./modules/repositories/repository-conn
 import { RepositoryStoreService } from "./modules/repositories/repository-store.service.js";
 import { CommentAdmissionGateService } from "./modules/quality-gates/comment-admission-gate.service.js";
 import { QualityScoringService } from "./modules/quality-gates/quality-scoring.service.js";
+import { FirstPassReviewService } from "./modules/reviews/first-pass-review.service.js";
+import { FileReviewStoreService } from "./modules/reviews/file-review-store.service.js";
+import { LangsmithTraceService } from "./modules/reviews/langsmith-trace.service.js";
+import { LlmCallLogStoreService } from "./modules/reviews/llm-call-log-store.service.js";
+import { PullRequestStoreService } from "./modules/reviews/pull-request-store.service.js";
+import { ReviewJobStoreService } from "./modules/reviews/review-job-store.service.js";
+import { RuleEngineClientService } from "./modules/reviews/rule-engine-client.service.js";
 import { SemanticRetrievalController } from "./modules/retrieval/semantic-retrieval.controller.js";
 import { SemanticRetrievalService } from "./modules/retrieval/semantic-retrieval.service.js";
 import { SemanticRetrievalStoreService } from "./modules/retrieval/semantic-retrieval-store.service.js";
@@ -29,17 +38,26 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
   ],
   providers: [
     ApiConfigService,
+    ContextFetchLogStoreService,
     ContextFetcherService,
     CommentAdmissionGateService,
     GitHubClientService,
+    FirstPassReviewService,
+    FileReviewStoreService,
     QualityScoringService,
+    LangsmithTraceService,
+    LlmCallLogStoreService,
+    PullRequestStoreService,
     RepositoryConnectService,
+    RuleEngineClientService,
+    ReviewJobStoreService,
     SemanticRetrievalService,
     SemanticRetrievalStoreService,
     RepositoryScanEventStoreService,
     RepositoryScanQueueService,
     RepositoryScanService,
     RepositoryScanStoreService,
+    RepositoryContextStoreService,
     RepositoryStoreService,
     ReviewTriageService,
   ],

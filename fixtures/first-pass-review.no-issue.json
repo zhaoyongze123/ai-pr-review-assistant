@@ -1,0 +1,15 @@
+{
+  "decision": "no_issue",
+  "confidence": 0.91,
+  "riskLevel": "low",
+  "rationale": "当前 diff 仅包含注释或命名微调，没有发现可证实的风险点。",
+  "evidenceCoverage": {
+    "modifiedSymbol": true,
+    "localContext": true,
+    "callers": false,
+    "callees": false,
+    "tests": false,
+    "schema": false
+  },
+  "provisionalFindings": []
+}

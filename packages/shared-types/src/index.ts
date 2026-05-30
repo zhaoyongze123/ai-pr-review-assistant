@@ -149,6 +149,7 @@ export type ContextToolName = z.infer<typeof ContextToolNameSchema>;
 
 export const ContextFetchStatusSchema = z.enum([
   "planned",
+  "completed",
   "rejected",
   "budget_exceeded",
   "skipped",
@@ -554,6 +555,50 @@ export const RuleViolationSchema = z.object({
 });
 export type RuleViolation = z.infer<typeof RuleViolationSchema>;
 
+export const RuleEngineScanFileSchema = z.object({
+  path: NonEmptyStringSchema,
+  content: z.string(),
+});
+export type RuleEngineScanFile = z.infer<typeof RuleEngineScanFileSchema>;
+
+export const RuleEngineScanRequestSchema = z
+  .object({
+    repositoryPath: NonEmptyStringSchema.optional(),
+    files: z.array(RuleEngineScanFileSchema).default([]),
+    semgrepConfigs: z.array(NonEmptyStringSchema).default([]),
+    moduleRuleConfigs: z
+      .record(NonEmptyStringSchema, NonEmptyStringSchema)
+      .default({}),
+    engines: z
+      .array(z.enum(["semgrep", "eslint"]))
+      .default(["semgrep", "eslint"]),
+    timeoutSeconds: z.number().int().positive().max(120).default(30),
+  })
+  .superRefine((value, context) => {
+    if (!value.repositoryPath && value.files.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "repositoryPath 和 files 至少要提供一个",
+        path: ["repositoryPath"],
+      });
+    }
+  });
+export type RuleEngineScanRequest = z.infer<typeof RuleEngineScanRequestSchema>;
+
+export const RuleEngineScanFailureSchema = z.object({
+  engine: z.enum(["semgrep", "eslint"]),
+  message: NonEmptyStringSchema,
+});
+export type RuleEngineScanFailure = z.infer<typeof RuleEngineScanFailureSchema>;
+
+export const RuleEngineScanResponseSchema = z.object({
+  violations: z.array(RuleViolationSchema).default([]),
+  failures: z.array(RuleEngineScanFailureSchema).default([]),
+});
+export type RuleEngineScanResponse = z.infer<
+  typeof RuleEngineScanResponseSchema
+>;
+
 export const ContextBudgetSchema = z.object({
   maxRounds: z.number().int().nonnegative(),
   maxToolCalls: z.number().int().nonnegative(),
@@ -623,6 +668,7 @@ export const ContextArtifactSchema = z.object({
   startLine: z.number().int().positive().optional(),
   endLine: z.number().int().positive().optional(),
   preview: NonEmptyStringSchema,
+  metadata: MetadataSchema.optional(),
 });
 export type ContextArtifact = z.infer<typeof ContextArtifactSchema>;
 
@@ -642,6 +688,16 @@ export const ContextFetchResultSchema = z.object({
   remainingBudget: ContextBudgetSchema,
 });
 export type ContextFetchResult = z.infer<typeof ContextFetchResultSchema>;
+
+export const SecondPassReviewResultSchema = z.object({
+  decision: z.enum(["final_review", "no_issue", "insufficient_evidence"]),
+  confidence: z.number().min(0).max(1),
+  rationale: NonEmptyStringSchema,
+  candidateComments: z.array(ReviewCommentCandidateSchema).default([]),
+});
+export type SecondPassReviewResult = z.infer<
+  typeof SecondPassReviewResultSchema
+>;
 
 export const QualityScoreBreakdownSchema = z.object({
   evidenceStrength: z.number().min(0).max(100),
@@ -702,6 +758,23 @@ export const ReviewJobSchema = z.object({
   updatedAt: TimestampSchema.optional(),
 });
 export type ReviewJob = z.infer<typeof ReviewJobSchema>;
+
+export const LlmCallLogSchema = z.object({
+  id: UuidSchema.optional(),
+  reviewJobId: UuidSchema.optional(),
+  fileReviewId: UuidSchema.optional(),
+  provider: NonEmptyStringSchema,
+  model: NonEmptyStringSchema,
+  promptKind: NonEmptyStringSchema,
+  inputTokens: z.number().int().nonnegative().default(0),
+  outputTokens: z.number().int().nonnegative().default(0),
+  costUsd: z.number().nonnegative().default(0),
+  latencyMs: z.number().int().nonnegative().optional(),
+  requestMetadata: MetadataSchema.default({}),
+  responseMetadata: MetadataSchema.default({}),
+  createdAt: TimestampSchema.optional(),
+});
+export type LlmCallLog = z.infer<typeof LlmCallLogSchema>;
 
 export const FileReviewSchema = z.object({
   id: UuidSchema.optional(),
@@ -812,6 +885,47 @@ export const ReviewTriageRequestSchema = z.object({
   budget: ContextBudgetSchema,
 });
 export type ReviewTriageRequest = z.infer<typeof ReviewTriageRequestSchema>;
+
+export const FirstPassReviewFileResultSchema = z.object({
+  file: PullRequestFileSchema,
+  diff: DiffParseResultSchema,
+  ruleViolations: z.array(RuleViolationSchema).default([]),
+  firstPass: ReviewTriageDecisionSchema,
+  triage: TriageEvaluationSchema,
+  contextPlan: ContextFetchResultSchema.optional(),
+  contextResult: ContextFetchResultSchema.optional(),
+  secondPass: SecondPassReviewResultSchema.optional(),
+});
+export type FirstPassReviewFileResult = z.infer<
+  typeof FirstPassReviewFileResultSchema
+>;
+
+export const FirstPassReviewRunRequestSchema = z.object({
+  repository: RepositoryRefSchema,
+  prNumber: z.number().int().positive(),
+  triggerSource: ReviewTriggerSourceSchema.default("manual"),
+  ruleScanTimeoutSeconds: z.number().int().positive().max(120).default(30),
+  ruleScanEngines: z
+    .array(z.enum(["semgrep", "eslint"]))
+    .default(["semgrep", "eslint"]),
+});
+export type FirstPassReviewRunRequest = z.infer<
+  typeof FirstPassReviewRunRequestSchema
+>;
+
+export const FirstPassReviewRunResponseSchema = z.object({
+  reviewJob: ReviewJobSchema.optional(),
+  pullRequest: PullRequestSchema,
+  repositoryPath: NonEmptyStringSchema,
+  ruleViolations: z.array(RuleViolationSchema).default([]),
+  ruleFailures: z.array(RuleEngineScanFailureSchema).default([]),
+  fileReviews: z.array(FileReviewSchema).default([]),
+  llmCalls: z.array(LlmCallLogSchema).default([]),
+  files: z.array(FirstPassReviewFileResultSchema).default([]),
+});
+export type FirstPassReviewRunResponse = z.infer<
+  typeof FirstPassReviewRunResponseSchema
+>;
 
 export const QualityScoreRequestSchema = z.object({
   candidate: ReviewCommentCandidateSchema,

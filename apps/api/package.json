@@ -8,10 +8,16 @@
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"api lint placeholder\"",
     "check": "tsc -p tsconfig.json --noEmit",
-    "validate:repository-connect": "tsx src/modules/repositories/repository-connect.validation.ts",
-    "smoke:repository-connect": "tsx src/modules/repositories/repository-connect.integration.ts"
+    "validate:repository-connect": "tsx --tsconfig tsconfig.json src/modules/repositories/repository-connect.validation.ts",
+    "smoke:repository-connect": "tsx --tsconfig tsconfig.json src/modules/repositories/repository-connect.integration.ts",
+    "smoke:rule-engine": "tsx --tsconfig tsconfig.json src/modules/reviews/rule-engine.integration.ts",
+    "smoke:first-pass-review": "tsx --tsconfig tsconfig.json src/modules/reviews/first-pass-review.integration.ts",
+    "smoke:langsmith-trace": "tsx --tsconfig tsconfig.json src/modules/reviews/langsmith-trace.integration.ts"
   },
   "dependencies": {
+    "@ai-pr-review/diff-core": "0.1.0",
+    "@ai-pr-review/llm-gateway": "0.1.0",
+    "@ai-pr-review/prompt-builder": "0.1.0",
     "@ai-pr-review/retrieval-core": "0.1.0",
     "@ai-pr-review/review-core": "0.1.0",
     "@ai-pr-review/shared-types": "0.1.0",
@@ -19,6 +25,7 @@
     "@nestjs/core": "^11.1.24",
     "@nestjs/platform-express": "^11.1.24",
     "dotenv": "^17.4.2",
+    "langsmith": "^0.7.3",
     "pg": "^8.21.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

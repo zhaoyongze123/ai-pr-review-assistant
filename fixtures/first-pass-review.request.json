@@ -1,0 +1,10 @@
+{
+  "repository": {
+    "provider": "github",
+    "owner": "acme-inc",
+    "repo": "payments-service"
+  },
+  "prNumber": 128,
+  "ruleScanTimeoutSeconds": 30,
+  "ruleScanEngines": ["semgrep", "eslint"]
+}
