@@ -28,4 +28,9 @@ export class WorkerConfig {
   get processingDelayMs(): number {
     return Number(process.env.SCAN_PROCESSING_DELAY_MS ?? 50);
   }
+
+  get githubToken(): string | undefined {
+    const value = process.env.GITHUB_TOKEN?.trim();
+    return value ? value : undefined;
+  }
 }

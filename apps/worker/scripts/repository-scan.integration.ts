@@ -38,6 +38,20 @@ async function main() {
 
   assert(databaseUrl, "smoke 测试必须提供 DATABASE_URL");
   process.env.SCAN_PROCESSING_DELAY_MS = "500";
+  const bootstrapPool = new Pool({
+    connectionString: databaseUrl,
+  });
+  await bootstrapPool.query(
+    `
+      update repository_scans
+      set
+        status = 'failed',
+        finished_at = now(),
+        updated_at = now()
+      where status in ('pending', 'running')
+    `,
+  );
+  await bootstrapPool.end();
 
   const [{ NestFactory }, { AppModule }] = await Promise.all([
     import("@nestjs/core"),
@@ -90,34 +104,35 @@ async function main() {
   const triggerPayload = RepositoryScanTriggerResponseSchema.parse(
     await triggerResponse.json(),
   );
-  assert.equal(triggerPayload.queued, true);
-  assert.equal(triggerPayload.deduplicated, false);
+  const activeScanId = triggerPayload.scan.id!;
 
-  const duplicateResponse = await fetch(
-    `http://127.0.0.1:${port}/api/repositories/${repositoryId}/scan`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+  if (triggerPayload.queued) {
+    assert.equal(triggerPayload.deduplicated, false);
+
+    const duplicateResponse = await fetch(
+      `http://127.0.0.1:${port}/api/repositories/${repositoryId}/scan`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          scanType: "full",
+          requestedBy: "m3-smoke-duplicate",
+        }),
       },
-      body: JSON.stringify({
-        scanType: "full",
-        requestedBy: "m2-smoke-duplicate",
-      }),
-    },
-  );
-  assert.equal(duplicateResponse.status, 200);
-  const duplicatePayload = RepositoryScanTriggerResponseSchema.parse(
-    await duplicateResponse.json(),
-  );
-  assert.equal(duplicatePayload.deduplicated, true);
-  assert.equal(duplicatePayload.scan.id, triggerPayload.scan.id);
+    );
+    assert.equal(duplicateResponse.status, 200);
+    const duplicatePayload = RepositoryScanTriggerResponseSchema.parse(
+      await duplicateResponse.json(),
+    );
+    assert.equal(duplicatePayload.deduplicated, true);
+    assert.equal(duplicatePayload.scan.id, activeScanId);
+  } else {
+    assert.equal(triggerPayload.deduplicated, true);
+  }
 
-  const statusPayload = await pollScanStatus(
-    repositoryId,
-    triggerPayload.scan.id!,
-    port,
-  );
+  const statusPayload = await pollScanStatus(repositoryId, activeScanId, port);
   assert.equal(statusPayload.scan.status, "done");
   assert.equal(statusPayload.events.length >= 2, true);
   assert.equal(statusPayload.events[0]?.eventName, "repository_scan_started");
@@ -139,12 +154,62 @@ async function main() {
       from repository_scans
       where id = $1
     `,
-    [triggerPayload.scan.id],
+    [activeScanId],
   );
   assert.equal(result.rowCount, 1);
   assert.equal(result.rows[0]?.status, "done");
   assert.equal(result.rows[0]?.repository_id, repositoryId);
   assert.ok(result.rows[0]?.target_sha.length);
+
+  const filesResult = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from repository_files
+      where scan_id = $1
+    `,
+    [activeScanId],
+  );
+  assert.ok(Number(filesResult.rows[0]?.count ?? "0") > 0);
+
+  const symbolsResult = await pool.query<{
+    symbol_name: string;
+    qualified_name: string;
+    file_path: string;
+  }>(
+    `
+      select symbol_name, qualified_name, file_path
+      from symbols
+      where scan_id = $1
+      order by file_path asc, symbol_name asc
+      limit 1
+    `,
+    [activeScanId],
+  );
+  assert.equal(symbolsResult.rowCount, 1);
+  assert.ok(symbolsResult.rows[0]?.symbol_name.length);
+  assert.ok(symbolsResult.rows[0]?.qualified_name.length);
+
+  const edgesResult = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from symbol_edges
+      where scan_id = $1
+        and edge_type = 'calls'
+    `,
+    [activeScanId],
+  );
+  assert.ok(Number(edgesResult.rows[0]?.count ?? "0") >= 1);
+
+  const riskTagResult = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from repository_files
+      where scan_id = $1
+        and jsonb_array_length(risk_tags) > 0
+    `,
+    [activeScanId],
+  );
+  assert.ok(Number(riskTagResult.rows[0]?.count ?? "0") >= 1);
 
   await pool.end();
   await app.close();

@@ -6,10 +6,14 @@ import {
   type RepositoryScanCompletedEvent,
   type RepositoryScanFailedEvent,
 } from "@ai-pr-review/shared-types";
+import { analyzeRepositorySnapshot } from "@ai-pr-review/repo-intelligence";
 import { Worker } from "bullmq";
 import Redis from "ioredis";
 import { Pool } from "pg";
+import { RepositoryIndexStore } from "./repository-index-store.js";
+import { withClonedRepository } from "./repository-clone.js";
 import { RepositoryScanEventStore } from "./repository-scan-event-store.js";
+import { RepositorySourceStore } from "./repository-source-store.js";
 import { RepositoryScanStore } from "./repository-scan-store.js";
 import { WorkerConfig } from "./worker-config.js";
 
@@ -19,6 +23,8 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
     connectionString: config.databaseUrl,
   });
   const scanStore = new RepositoryScanStore(pool);
+  const repositorySourceStore = new RepositorySourceStore(pool);
+  const repositoryIndexStore = new RepositoryIndexStore(pool);
   const eventStore = new RepositoryScanEventStore(eventRedis);
 
   const worker = new Worker<RepositoryScanJobPayload>(
@@ -39,15 +45,42 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
         };
         await eventStore.append(payload.scanId, startedEvent);
 
-        // M2 先验证编排链路；真正的仓库扫描和索引提取放到 M3/M4。
-        await new Promise((resolve) =>
-          setTimeout(resolve, config.processingDelayMs),
+        const repository = await repositorySourceStore.findById(
+          payload.repositoryId,
+        );
+        if (!repository) {
+          throw new Error("扫描任务关联的仓库不存在");
+        }
+
+        const analysis = await withClonedRepository({
+          cloneUrl: repository.cloneUrl,
+          ref: payload.targetSha,
+          authToken: config.githubToken,
+          callback: async (rootDir) =>
+            analyzeRepositorySnapshot({
+              repositoryId: payload.repositoryId,
+              scanId: payload.scanId,
+              rootDir,
+            }),
+        });
+
+        await repositoryIndexStore.replaceForScan(
+          payload.repositoryId,
+          payload.scanId,
+          {
+            files: analysis.files,
+            symbols: analysis.symbols,
+            edges: analysis.edges,
+          },
         );
 
         const doneScan = await scanStore.markDone(
           payload.scanId,
-          [],
-          ["scan_pipeline_ready"],
+          analysis.languageSummary,
+          analysis.frameworkSummary,
+        );
+        const structuredCounts = await scanStore.getStructuredCounts(
+          payload.scanId,
         );
         const completedEvent: RepositoryScanCompletedEvent = {
           eventName: "repository_scan_completed",
@@ -57,11 +90,8 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
             scanId: payload.scanId,
             targetSha: payload.targetSha,
             status: "done",
-            fileCount: doneScan.languageSummary.reduce(
-              (total, item) => total + item.fileCount,
-              0,
-            ),
-            symbolCount: 0,
+            fileCount: structuredCounts.fileCount,
+            symbolCount: structuredCounts.symbolCount,
             semanticDocumentCount: 0,
           },
         };

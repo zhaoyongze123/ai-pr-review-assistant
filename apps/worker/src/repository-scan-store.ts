@@ -1,8 +1,14 @@
 import { Pool } from "pg";
 import {
+  RepositoryFileSchema,
   RepositoryScanSchema,
+  SymbolEdgeSchema,
+  SymbolSchema,
   type LanguageSummary,
+  type RepositoryFile,
   type RepositoryScan,
+  type Symbol,
+  type SymbolEdge,
 } from "@ai-pr-review/shared-types";
 
 type RepositoryScanRow = {
@@ -146,5 +152,32 @@ export class RepositoryScanStore {
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     });
+  }
+
+  async getStructuredCounts(scanId: string): Promise<{
+    fileCount: number;
+    symbolCount: number;
+    edgeCount: number;
+  }> {
+    const [filesResult, symbolsResult, edgesResult] = await Promise.all([
+      this.pool.query<{ count: string }>(
+        `select count(*)::text as count from repository_files where scan_id = $1`,
+        [scanId],
+      ),
+      this.pool.query<{ count: string }>(
+        `select count(*)::text as count from symbols where scan_id = $1`,
+        [scanId],
+      ),
+      this.pool.query<{ count: string }>(
+        `select count(*)::text as count from symbol_edges where scan_id = $1`,
+        [scanId],
+      ),
+    ]);
+
+    return {
+      fileCount: Number(filesResult.rows[0]?.count ?? "0"),
+      symbolCount: Number(symbolsResult.rows[0]?.count ?? "0"),
+      edgeCount: Number(edgesResult.rows[0]?.count ?? "0"),
+    };
   }
 }

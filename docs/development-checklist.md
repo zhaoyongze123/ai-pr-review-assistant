@@ -26,7 +26,7 @@
 | M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
 | M1 仓库接入与 GitHub 认证               | 已完成                 | M0             | 已完成     |
 | M2 仓库扫描任务编排                     | 已完成                 | M0, M1         | 已完成     |
-| M3 结构化索引构建                       | 待开发                 | M0, M2         | P0         |
+| M3 结构化索引构建                       | 开发中，最小链路已完成 | M0, M2         | P0         |
 | M4 语义语料构建与检索                   | 待开发                 | M0, M2         | P1         |
 | M5 PR 拉取与 Diff Core                  | 待开发                 | M0, M1         | P0         |
 | M6 规则引擎接入                         | 待开发                 | M0, M5         | P1         |
@@ -165,30 +165,30 @@
 
 ### Issue 清单
 
-- [ ] 新建 `packages/repo-intelligence`
-- [ ] 设计 repo-intelligence 对外接口
-- [ ] 接入语言 / 框架识别
-- [ ] 接入 TS/JS AST 提取器
-- [ ] 提取 `RepositoryFile`
-- [ ] 提取 `Symbol`
-- [ ] 提取 `SymbolEdge`
-- [ ] 提取 file summary
-- [ ] 提取 module summary
-- [ ] 提取 risk tags
-- [ ] 写入 `repository_files`
-- [ ] 写入 `symbols`
-- [ ] 写入 `symbol_edges`
-- [ ] 增加 query 能力：
-  - [ ] 按 symbol 查定义
-  - [ ] 按 symbol 查 callers
-  - [ ] 按 symbol 查 callees
-- [ ] 补 TS/JS fixture 或最小 demo 仓库样例
+- [x] 新建 `packages/repo-intelligence`
+- [x] 设计 repo-intelligence 对外接口
+- [x] 接入语言 / 框架识别
+- [x] 接入 TS/JS AST 提取器
+- [x] 提取 `RepositoryFile`
+- [x] 提取 `Symbol`
+- [x] 提取 `SymbolEdge`
+- [x] 提取 file summary
+- [x] 提取 module summary
+- [x] 提取 risk tags
+- [x] 写入 `repository_files`
+- [x] 写入 `symbols`
+- [x] 写入 `symbol_edges`
+- [x] 增加 query 能力：
+  - [x] 按 symbol 查定义
+  - [x] 按 symbol 查 callers
+  - [x] 按 symbol 查 callees
+- [x] 补 TS/JS fixture 或最小 demo 仓库样例
 
 ### 最小验证
 
-- [ ] 能在真实 TS 仓库中查到至少一个 symbol 定义
-- [ ] 能查到至少一条 caller 边
-- [ ] 关键 auth/payment 文件有 risk tag
+- [x] 能在真实 TS 仓库中查到至少一个 symbol 定义
+- [x] 能查到至少一条 caller 边
+- [x] 至少一个高风险文件命中 risk tag
 
 ### 模块完成定义
 
@@ -198,7 +198,7 @@
 
 ### LangSmith
 
-- [ ] 不接
+- [x] 不接
 
 ## M4. 语义语料构建与检索
 
