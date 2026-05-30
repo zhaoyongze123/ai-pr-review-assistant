@@ -1,0 +1,36 @@
+{
+  "decision": "need_more_context",
+  "confidence": 0.58,
+  "riskLevel": "high",
+  "rationale": "返回值由布尔值变为对象，可能破坏仍依赖旧语义的调用方分支判断。",
+  "evidenceCoverage": {
+    "modifiedSymbol": true,
+    "localContext": true,
+    "callers": false,
+    "callees": false,
+    "tests": true,
+    "schema": false
+  },
+  "provisionalFindings": [
+    {
+      "diffLineRef": "L101+",
+      "lineRefs": ["L101+"],
+      "severity": "HIGH",
+      "category": "bug",
+      "title": "返回值语义变化可能破坏旧调用方分支逻辑",
+      "message": "如果调用方仍然按旧布尔返回值做真假判断，会把失败分支误判为成功或走到错误路径。",
+      "suggestion": "补查所有直接调用方，统一迁移到新对象语义再合并。",
+      "confidence": 0.82,
+      "evidenceRefs": ["diff:L101+", "symbol:AuthService.refreshToken"]
+    }
+  ],
+  "contextRequest": {
+    "reason": "需要确认调用方是否仍按旧布尔语义消费 refreshToken 返回值。",
+    "symbols": ["AuthService.refreshToken"],
+    "files": [],
+    "callersOf": ["AuthService.refreshToken"],
+    "calleesOf": [],
+    "tests": ["AuthService.refreshToken"],
+    "schemaTargets": []
+  }
+}

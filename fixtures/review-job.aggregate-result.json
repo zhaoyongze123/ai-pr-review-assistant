@@ -1,0 +1,105 @@
+{
+  "reviewJob": {
+    "id": "d4e72e8f-6e3d-4703-90cb-3d0eb6ff9dc4",
+    "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+    "pullRequestId": "ea2d0d76-52d3-4307-afd9-b7f6978ab286",
+    "triggerSource": "manual",
+    "status": "done",
+    "totalFiles": 2,
+    "finishedFiles": 2,
+    "totalSlices": 2,
+    "finishedSlices": 2,
+    "cacheHitFiles": 0,
+    "llmProvider": "openai",
+    "llmModel": "gpt-5",
+    "totalInputTokens": 3240,
+    "totalOutputTokens": 914,
+    "totalCostUsd": 0.0427,
+    "durationMs": 16480,
+    "startedAt": "2026-05-30T03:25:00.000Z",
+    "finishedAt": "2026-05-30T03:25:16.480Z",
+    "createdAt": "2026-05-30T03:25:00.000Z",
+    "updatedAt": "2026-05-30T03:25:16.480Z"
+  },
+  "pullRequest": {
+    "id": "ea2d0d76-52d3-4307-afd9-b7f6978ab286",
+    "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+    "provider": "github",
+    "owner": "acme-inc",
+    "repo": "payments-service",
+    "prNumber": 128,
+    "title": "refactor: 调整 refresh token 返回值语义",
+    "authorLogin": "alice",
+    "baseBranch": "main",
+    "headBranch": "feature/refresh-token-refactor",
+    "baseSha": "fa1f537b9a47b6150c304ba44820ac4f7f55dd27",
+    "headSha": "b7c9a51db947d15415462f99d3d5174a081fbe43",
+    "changedFiles": 2,
+    "additions": 34,
+    "deletions": 12,
+    "state": "open",
+    "files": [],
+    "createdAt": "2026-05-30T03:24:00.000Z",
+    "updatedAt": "2026-05-30T03:24:00.000Z"
+  },
+  "files": [
+    {
+      "id": "1678c2c7-7977-46fd-b1b2-32701da8608f",
+      "reviewJobId": "d4e72e8f-6e3d-4703-90cb-3d0eb6ff9dc4",
+      "pullRequestId": "ea2d0d76-52d3-4307-afd9-b7f6978ab286",
+      "filePath": "src/auth/auth.service.ts",
+      "language": "TypeScript",
+      "fileStatus": "modified",
+      "patchSha256": "ec7d018057be29c9894384d6cbf4c42f85f42d6995178dd1c4076037f4ef03d9",
+      "isCached": false,
+      "sliceCount": 1,
+      "aiCommentCount": 1,
+      "ruleCommentCount": 0,
+      "highestSeverity": "HIGH",
+      "riskScore": 89,
+      "summary": "refreshToken 返回值语义变化可能影响旧调用方。",
+      "durationMs": 9840,
+      "triageDecision": "need_more_context",
+      "contextRound": 1
+    }
+  ],
+  "comments": [
+    {
+      "id": "47275346-dbb2-498a-b492-229eb8347782",
+      "reviewJobId": "d4e72e8f-6e3d-4703-90cb-3d0eb6ff9dc4",
+      "fileReviewId": "1678c2c7-7977-46fd-b1b2-32701da8608f",
+      "source": "ai",
+      "category": "bug",
+      "severity": "HIGH",
+      "title": "返回值语义变化可能破坏旧调用方分支逻辑",
+      "message": "如果调用方仍然按旧布尔返回值做真假判断，会把失败分支误判为成功或走到错误路径。",
+      "suggestion": "补查所有直接调用方，统一迁移到新对象语义再合并。",
+      "filePath": "src/auth/auth.service.ts",
+      "diffLineRef": "L101+",
+      "lineStart": 101,
+      "lineEnd": 101,
+      "fingerprint": "auth-refresh-return-shape-change-callers",
+      "evidenceRefs": [
+        "diff:L101+",
+        "symbol:AuthService.refreshToken",
+        "caller:AuthMiddleware.authMiddleware"
+      ],
+      "qualityScore": 78,
+      "admissionReasons": [],
+      "isResolved": false,
+      "metadata": {
+        "triageDecision": "need_more_context",
+        "contextRound": 1
+      }
+    }
+  ],
+  "summary": {
+    "headline": "PR 调整了 refresh token 失败分支的返回结构，并引入了调用方兼容性风险。",
+    "riskSummary": "当前改动已更新单测，但仍需确认直接调用方是否从布尔语义迁移到对象语义。",
+    "mergeRecommendation": "request_changes",
+    "notableFindings": [
+      "AuthService.refreshToken 从布尔返回值切换为对象返回值。",
+      "检测到至少一个直接调用方仍可能依赖旧真假判断。"
+    ]
+  }
+}

@@ -10,6 +10,8 @@
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-pr-review/review-core": "0.1.0",
+    "@ai-pr-review/shared-types": "0.1.0",
     "@nestjs/common": "^11.1.24",
     "@nestjs/core": "^11.1.24",
     "@nestjs/platform-express": "^11.1.24",

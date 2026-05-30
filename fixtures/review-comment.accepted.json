@@ -1,0 +1,30 @@
+{
+  "id": "47275346-dbb2-498a-b492-229eb8347782",
+  "reviewJobId": "d4e72e8f-6e3d-4703-90cb-3d0eb6ff9dc4",
+  "fileReviewId": "1678c2c7-7977-46fd-b1b2-32701da8608f",
+  "source": "ai",
+  "category": "bug",
+  "severity": "HIGH",
+  "title": "返回值语义变化可能破坏旧调用方分支逻辑",
+  "message": "如果调用方仍然按旧布尔返回值做真假判断，会把失败分支误判为成功或走到错误路径。",
+  "suggestion": "补查所有直接调用方，统一迁移到新对象语义再合并。",
+  "filePath": "src/auth/auth.service.ts",
+  "diffLineRef": "L101+",
+  "lineStart": 101,
+  "lineEnd": 101,
+  "fingerprint": "auth-refresh-return-shape-change-callers",
+  "evidenceRefs": [
+    "diff:L101+",
+    "symbol:AuthService.refreshToken",
+    "caller:AuthMiddleware.authMiddleware"
+  ],
+  "qualityScore": 78,
+  "admissionReasons": [],
+  "isResolved": false,
+  "metadata": {
+    "triageDecision": "need_more_context",
+    "contextRound": 1
+  },
+  "createdAt": "2026-05-30T03:27:00.000Z",
+  "updatedAt": "2026-05-30T03:27:00.000Z"
+}
