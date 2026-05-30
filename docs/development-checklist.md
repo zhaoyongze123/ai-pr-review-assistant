@@ -21,21 +21,21 @@
 
 ## 2. 模块执行清单总览
 
-| 模块                                    | 状态                        | 前置依赖       | 建议优先级 |
-| --------------------------------------- | --------------------------- | -------------- | ---------- |
-| M0 契约与持久化真源                     | 已完成基础版，持续维护      | 无             | 已完成     |
-| M1 仓库接入与 GitHub 认证               | 开发中（实现完成，待提 PR） | M0             | P0         |
-| M2 仓库扫描任务编排                     | 待开发                      | M0, M1         | P0         |
-| M3 结构化索引构建                       | 待开发                      | M0, M2         | P0         |
-| M4 语义语料构建与检索                   | 待开发                      | M0, M2         | P1         |
-| M5 PR 拉取与 Diff Core                  | 待开发                      | M0, M1         | P0         |
-| M6 规则引擎接入                         | 待开发                      | M0, M5         | P1         |
-| M7 首轮审查与 Triage                    | 部分有骨架                  | M0, M5, M6     | P1         |
-| M8 上下文检索与二轮审查                 | 部分有骨架                  | M0, M3, M4, M7 | P1         |
-| M9 评论准入、质量评分与聚合             | 部分有骨架                  | M0, M7, M8     | P1         |
-| M10 API 查询面与 Web 工作台             | 待开发                      | M0, M5, M9     | P2         |
-| M11 GitHub 回写                         | 待开发                      | M0, M9         | P2         |
-| M12 Observability、LangSmith 与评估回归 | 待开发                      | M7, M8, M9     | P2         |
+| 模块                                    | 状态                   | 前置依赖       | 建议优先级 |
+| --------------------------------------- | ---------------------- | -------------- | ---------- |
+| M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
+| M1 仓库接入与 GitHub 认证               | 已完成                 | M0             | 已完成     |
+| M2 仓库扫描任务编排                     | 已完成                 | M0, M1         | 已完成     |
+| M3 结构化索引构建                       | 待开发                 | M0, M2         | P0         |
+| M4 语义语料构建与检索                   | 待开发                 | M0, M2         | P1         |
+| M5 PR 拉取与 Diff Core                  | 待开发                 | M0, M1         | P0         |
+| M6 规则引擎接入                         | 待开发                 | M0, M5         | P1         |
+| M7 首轮审查与 Triage                    | 部分有骨架             | M0, M5, M6     | P1         |
+| M8 上下文检索与二轮审查                 | 部分有骨架             | M0, M3, M4, M7 | P1         |
+| M9 评论准入、质量评分与聚合             | 部分有骨架             | M0, M7, M8     | P1         |
+| M10 API 查询面与 Web 工作台             | 待开发                 | M0, M5, M9     | P2         |
+| M11 GitHub 回写                         | 待开发                 | M0, M9         | P2         |
+| M12 Observability、LangSmith 与评估回归 | 待开发                 | M7, M8, M9     | P2         |
 
 ## 3. 状态维护规则
 
@@ -88,7 +88,7 @@
 
 ### 当前判断
 
-实现、fixture 和真实 smoke 已完成，当前状态为待提交 PR。
+已完成并合并，进入后续模块消费阶段。
 
 ### Issue 清单
 
@@ -124,27 +124,31 @@
 
 ## M2. 仓库扫描任务编排
 
+### 当前判断
+
+已完成。当前已具备 API 触发、BullMQ 入队、Worker 消费、状态流转、去重和调试查询闭环。
+
 ### Issue 清单
 
-- [ ] 审查 `RepositoryScanRequest` 和相关事件契约
-- [ ] 在 `apps/api` 新增 `POST /api/repositories/:id/scan`
-- [ ] 创建 `repository_scans` 记录
-- [ ] 在 Worker 中新增 scan job consumer
-- [ ] 接入 BullMQ queue 定义
-- [ ] 实现状态流转：`pending -> running -> done/failed`
-- [ ] 实现幂等控制，避免重复扫描并发失控
-- [ ] 推送 `repository_scan_started`
-- [ ] 推送 `repository_scan_completed`
-- [ ] 推送 `repository_scan_failed`
-- [ ] 增加失败重试策略
-- [ ] 增加 scan 结果查询接口或调试入口
+- [x] 审查 `RepositoryScanRequest` 和相关事件契约
+- [x] 在 `apps/api` 新增 `POST /api/repositories/:id/scan`
+- [x] 创建 `repository_scans` 记录
+- [x] 在 Worker 中新增 scan job consumer
+- [x] 接入 BullMQ queue 定义
+- [x] 实现状态流转：`pending -> running -> done/failed`
+- [x] 实现幂等控制，避免重复扫描并发失控
+- [x] 推送 `repository_scan_started`
+- [x] 推送 `repository_scan_completed`
+- [x] 推送 `repository_scan_failed`
+- [x] 增加失败重试策略
+- [x] 增加 scan 结果查询接口或调试入口
 
 ### 最小验证
 
-- [ ] API 触发后 scan 记录写库
-- [ ] Worker 可消费任务
-- [ ] 状态从 `pending` 走到 `done`
-- [ ] 重复触发不会打爆队列
+- [x] API 触发后 scan 记录写库
+- [x] Worker 可消费任务
+- [x] 状态从 `pending` 走到 `done`
+- [x] 重复触发不会打爆队列
 
 ### 模块完成定义
 
@@ -155,7 +159,7 @@
 
 ### LangSmith
 
-- [ ] 不接
+- [x] 不接
 
 ## M3. 结构化索引构建
 

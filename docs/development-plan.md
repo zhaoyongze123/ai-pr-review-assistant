@@ -136,7 +136,7 @@
 
 ### 当前状态
 
-开发中（实现完成，待提 PR）。
+已完成。
 
 ### 目标
 
@@ -179,6 +179,10 @@
 
 ## M2. 仓库扫描任务编排
 
+### 当前状态
+
+已完成。
+
 ### 目标
 
 接入仓库后，能够触发一次完整扫描任务，并把状态流转起来。
@@ -205,6 +209,14 @@
 - Worker 能真实消费任务并更新状态。
 - 前端或调试端能收到扫描完成事件。
 - 重复点击扫描时不会产生不可控重复任务。
+
+### 当前落地结果
+
+- 已新增 `POST /api/repositories/:id/scan` 和 `GET /api/repositories/:id/scans/:scanId`。
+- 已补 `RepositoryScanTriggerRequest/Response`、scan queue payload 和 started/completed/failed 事件契约。
+- 已接入 BullMQ queue、Worker consumer、Redis 事件流和 `repository_scans` 状态更新。
+- 已完成重复触发去重、失败重试配置和调试查询闭环。
+- 已完成真实 smoke：API 触发、Worker 消费、状态从 `pending` 到 `done`、重复触发命中去重、数据库落库成功。
 
 ### LangSmith
 

@@ -38,15 +38,17 @@ flowchart TD
 
 输入：
 
-- `RepositoryScanRequest`
+- `RepositoryScanTriggerRequest`
 
 输出：
 
+- `RepositoryScanTriggerResponse`
 - `RepositoryScan`
 - `RepositoryFile[]`
 - `Symbol[]`
 - `SymbolEdge[]`
 - `SemanticDocument[]`
+- `RepositoryScanEvent`
 
 ### 阶段 3：PR 拉取
 
