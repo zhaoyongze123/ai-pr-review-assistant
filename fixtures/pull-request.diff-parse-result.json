@@ -1,0 +1,81 @@
+[
+  {
+    "filePath": "src/auth.ts",
+    "language": "TypeScript",
+    "hunks": [
+      {
+        "hunkId": "src/auth.ts#H1",
+        "header": "@@ -10,3 +10,4 @@ export function login() {",
+        "oldStart": 10,
+        "oldLines": 3,
+        "newStart": 10,
+        "newLines": 4,
+        "lines": [
+          {
+            "ref": "src/auth.ts#H1:L10",
+            "lineType": "context",
+            "oldLineNumber": 10,
+            "newLineNumber": 10,
+            "content": "const user = findUser();"
+          },
+          {
+            "ref": "src/auth.ts#H1:L11-",
+            "lineType": "remove",
+            "oldLineNumber": 11,
+            "content": "return user.token;"
+          },
+          {
+            "ref": "src/auth.ts#H1:L11+",
+            "lineType": "add",
+            "newLineNumber": 11,
+            "content": "if (!user) throw new Error('missing user');"
+          },
+          {
+            "ref": "src/auth.ts#H1:L12+",
+            "lineType": "add",
+            "newLineNumber": 12,
+            "content": "return user.sessionToken;"
+          },
+          {
+            "ref": "src/auth.ts#H1:L12",
+            "lineType": "context",
+            "oldLineNumber": 12,
+            "newLineNumber": 13,
+            "content": "}"
+          }
+        ]
+      }
+    ],
+    "lineRefMap": {
+      "src/auth.ts#H1:L10": {
+        "hunkId": "src/auth.ts#H1",
+        "lineType": "context",
+        "oldLineNumber": 10,
+        "newLineNumber": 10
+      },
+      "src/auth.ts#H1:L11-": {
+        "hunkId": "src/auth.ts#H1",
+        "lineType": "remove",
+        "oldLineNumber": 11
+      },
+      "src/auth.ts#H1:L11+": {
+        "hunkId": "src/auth.ts#H1",
+        "lineType": "add",
+        "newLineNumber": 11
+      },
+      "src/auth.ts#H1:L12+": {
+        "hunkId": "src/auth.ts#H1",
+        "lineType": "add",
+        "newLineNumber": 12
+      },
+      "src/auth.ts#H1:L12": {
+        "hunkId": "src/auth.ts#H1",
+        "lineType": "context",
+        "oldLineNumber": 12,
+        "newLineNumber": 13
+      }
+    },
+    "totalAddedLines": 2,
+    "totalRemovedLines": 1
+  }
+]

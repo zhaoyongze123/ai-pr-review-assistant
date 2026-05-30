@@ -1,0 +1,29 @@
+[
+  {
+    "source": "rule",
+    "engine": "semgrep",
+    "ruleId": "typescript.lang.security.audit.detect-non-literal-fs-filename",
+    "filePath": "src/file.ts",
+    "severity": "MEDIUM",
+    "category": "security",
+    "title": "typescript.lang.security.audit.detect-non-literal-fs-filename",
+    "message": "Filesystem path comes from user input.",
+    "lineStart": 42,
+    "lineEnd": 43,
+    "metadata": {
+      "category": "security"
+    }
+  },
+  {
+    "source": "rule",
+    "engine": "eslint",
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "src/jobs.ts",
+    "severity": "HIGH",
+    "category": "bug",
+    "title": "@typescript-eslint/no-floating-promises",
+    "message": "Promises must be awaited.",
+    "lineStart": 7,
+    "lineEnd": 7
+  }
+]

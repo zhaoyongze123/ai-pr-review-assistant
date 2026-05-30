@@ -168,8 +168,6 @@ export const ReviewEventNameSchema = z.enum([
 ]);
 export type ReviewEventName = z.infer<typeof ReviewEventNameSchema>;
 
-export const REPOSITORY_SCAN_QUEUE_NAME = "repository-scan";
-
 // 仓库接入与语义地图相关契约。这一段给扫描链路和结构化索引使用。
 export const LanguageSummarySchema = z.object({
   language: NonEmptyStringSchema,
@@ -216,9 +214,7 @@ export const ApiErrorCodeSchema = z.enum([
   "GITHUB_UNAUTHORIZED",
   "REPOSITORY_NOT_FOUND",
   "REPOSITORY_FORBIDDEN",
-  "SCAN_NOT_FOUND",
   "DATABASE_ERROR",
-  "REDIS_ERROR",
   "INTERNAL_ERROR",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
@@ -232,19 +228,12 @@ export const ApiErrorResponseSchema = z.object({
 });
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
-export const RepositoryScanTriggerRequestSchema = z.object({
+export const RepositoryScanRequestSchema = z.object({
+  repositoryId: UuidSchema,
   scanType: RepositoryScanTypeSchema.default("full"),
   targetSha: NonEmptyStringSchema.optional(),
   requestedBy: NonEmptyStringSchema.optional(),
 });
-export type RepositoryScanTriggerRequest = z.infer<
-  typeof RepositoryScanTriggerRequestSchema
->;
-
-export const RepositoryScanRequestSchema =
-  RepositoryScanTriggerRequestSchema.extend({
-    repositoryId: UuidSchema,
-  });
 export type RepositoryScanRequest = z.infer<typeof RepositoryScanRequestSchema>;
 
 export const RepositoryScanSchema = z.object({
@@ -261,26 +250,6 @@ export const RepositoryScanSchema = z.object({
   updatedAt: TimestampSchema.optional(),
 });
 export type RepositoryScan = z.infer<typeof RepositoryScanSchema>;
-
-export const RepositoryScanTriggerResponseSchema = z.object({
-  scan: RepositoryScanSchema,
-  queued: z.boolean(),
-  deduplicated: z.boolean(),
-});
-export type RepositoryScanTriggerResponse = z.infer<
-  typeof RepositoryScanTriggerResponseSchema
->;
-
-export const RepositoryScanJobPayloadSchema = z.object({
-  scanId: UuidSchema,
-  repositoryId: UuidSchema,
-  scanType: RepositoryScanTypeSchema,
-  targetSha: NonEmptyStringSchema,
-  requestedBy: NonEmptyStringSchema.optional(),
-});
-export type RepositoryScanJobPayload = z.infer<
-  typeof RepositoryScanJobPayloadSchema
->;
 
 export const RepositoryFileSchema = z.object({
   id: UuidSchema.optional(),
@@ -410,6 +379,14 @@ export const DiffLineSchema = z.object({
 });
 export type DiffLine = z.infer<typeof DiffLineSchema>;
 
+export const DiffLineRefMapEntrySchema = z.object({
+  hunkId: NonEmptyStringSchema,
+  lineType: z.enum(["add", "remove", "context"]),
+  oldLineNumber: z.number().int().positive().optional(),
+  newLineNumber: z.number().int().positive().optional(),
+});
+export type DiffLineRefMapEntry = z.infer<typeof DiffLineRefMapEntrySchema>;
+
 export const DiffHunkSchema = z.object({
   hunkId: NonEmptyStringSchema,
   header: NonEmptyStringSchema,
@@ -425,6 +402,9 @@ export const DiffParseResultSchema = z.object({
   filePath: NonEmptyStringSchema,
   language: NonEmptyStringSchema.optional(),
   hunks: z.array(DiffHunkSchema).default([]),
+  lineRefMap: z
+    .record(NonEmptyStringSchema, DiffLineRefMapEntrySchema)
+    .default({}),
   totalAddedLines: z.number().int().nonnegative(),
   totalRemovedLines: z.number().int().nonnegative(),
 });
@@ -674,20 +654,6 @@ export const ReviewAggregateResultSchema = z.object({
 export type ReviewAggregateResult = z.infer<typeof ReviewAggregateResultSchema>;
 
 // 实时事件契约。前端只订阅这些边界稳定的消息，不直接依赖内部任务对象。
-export const RepositoryScanStartedEventSchema = z.object({
-  eventName: z.literal("repository_scan_started"),
-  occurredAt: TimestampSchema,
-  payload: z.object({
-    repositoryId: UuidSchema,
-    scanId: UuidSchema,
-    targetSha: NonEmptyStringSchema,
-    status: z.literal("running"),
-  }),
-});
-export type RepositoryScanStartedEvent = z.infer<
-  typeof RepositoryScanStartedEventSchema
->;
-
 export const RepositoryScanCompletedEventSchema = z.object({
   eventName: z.literal("repository_scan_completed"),
   occurredAt: TimestampSchema,
@@ -703,36 +669,6 @@ export const RepositoryScanCompletedEventSchema = z.object({
 });
 export type RepositoryScanCompletedEvent = z.infer<
   typeof RepositoryScanCompletedEventSchema
->;
-
-export const RepositoryScanFailedEventSchema = z.object({
-  eventName: z.literal("repository_scan_failed"),
-  occurredAt: TimestampSchema,
-  payload: z.object({
-    repositoryId: UuidSchema,
-    scanId: UuidSchema,
-    targetSha: NonEmptyStringSchema,
-    status: z.literal("failed"),
-    errorMessage: NonEmptyStringSchema,
-  }),
-});
-export type RepositoryScanFailedEvent = z.infer<
-  typeof RepositoryScanFailedEventSchema
->;
-
-export const RepositoryScanEventSchema = z.discriminatedUnion("eventName", [
-  RepositoryScanStartedEventSchema,
-  RepositoryScanCompletedEventSchema,
-  RepositoryScanFailedEventSchema,
-]);
-export type RepositoryScanEvent = z.infer<typeof RepositoryScanEventSchema>;
-
-export const RepositoryScanStatusResponseSchema = z.object({
-  scan: RepositoryScanSchema,
-  events: z.array(RepositoryScanEventSchema).default([]),
-});
-export type RepositoryScanStatusResponse = z.infer<
-  typeof RepositoryScanStatusResponseSchema
 >;
 
 export const ReviewJobProgressEventSchema = z.object({

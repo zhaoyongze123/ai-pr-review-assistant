@@ -1,0 +1,39 @@
+{
+  "decision": "need_more_context",
+  "confidence": 0.68,
+  "riskLevel": "high",
+  "rationale": "规则命中高风险问题，首轮先保留发现并请求调用方、测试或配置证据",
+  "evidenceCoverage": {
+    "modifiedSymbol": false,
+    "localContext": true,
+    "callers": false,
+    "callees": false,
+    "tests": false,
+    "schema": false
+  },
+  "provisionalFindings": [
+    {
+      "diffLineRef": "src/auth.ts#H1:L2+",
+      "lineRefs": ["src/auth.ts#H1:L2+"],
+      "severity": "HIGH",
+      "category": "security",
+      "title": "Raw token returned",
+      "message": "Token is returned without session guard.",
+      "confidence": 0.72,
+      "evidenceRefs": [
+        "rule:semgrep:auth.raw-token-return",
+        "diff:src/auth.ts"
+      ],
+      "duplicateFingerprint": "semgrep:auth.raw-token-return:src/auth.ts:2"
+    }
+  ],
+  "contextRequest": {
+    "reason": "高风险规则命中需要补充调用方、测试或配置证据以降低误报",
+    "symbols": [],
+    "files": ["src/auth.ts"],
+    "callersOf": ["src/auth.ts"],
+    "calleesOf": [],
+    "tests": ["src/auth.ts"],
+    "schemaTargets": []
+  }
+}

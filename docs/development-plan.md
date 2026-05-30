@@ -136,7 +136,7 @@
 
 ### 当前状态
 
-已完成。
+开发中（实现完成，待提 PR）。
 
 ### 目标
 
@@ -179,10 +179,6 @@
 
 ## M2. 仓库扫描任务编排
 
-### 当前状态
-
-已完成。
-
 ### 目标
 
 接入仓库后，能够触发一次完整扫描任务，并把状态流转起来。
@@ -209,14 +205,6 @@
 - Worker 能真实消费任务并更新状态。
 - 前端或调试端能收到扫描完成事件。
 - 重复点击扫描时不会产生不可控重复任务。
-
-### 当前落地结果
-
-- 已新增 `POST /api/repositories/:id/scan` 和 `GET /api/repositories/:id/scans/:scanId`。
-- 已补 `RepositoryScanTriggerRequest/Response`、scan queue payload 和 started/completed/failed 事件契约。
-- 已接入 BullMQ queue、Worker consumer、Redis 事件流和 `repository_scans` 状态更新。
-- 已完成重复触发去重、失败重试配置和调试查询闭环。
-- 已完成真实 smoke：API 触发、Worker 消费、状态从 `pending` 到 `done`、重复触发命中去重、数据库落库成功。
 
 ### LangSmith
 
@@ -319,6 +307,19 @@
 
 给定 PR 编号，系统能拿到完整 PR 变更，并构建稳定的 `diffLineRef`。
 
+### 当前状态
+
+已完成基础版：
+
+- 新增 `packages/diff-core`，可把 GitHub file patch 解析为 `DiffHunk[]`。
+- `DiffParseResult` 已补 `lineRefMap`，支持 `diffLineRef -> old/new line -> hunkId` 映射。
+- `GitHubClientService` 已支持拉取 PR 元信息与 PR files patch。
+- 已补 patch 为空文件的兜底逻辑、diff fixture 和验证脚本。
+
+当前限制：
+
+- `pull_requests` 落库尚未接入 store，后续在 review job 编排模块统一写入。
+
 ### 代码落点
 
 - 建议新增 `packages/diff-core`
@@ -342,8 +343,8 @@
 
 ### 验收标准
 
-- 能对一个真实 PR 拉到文件列表与 patch。
-- `DiffParseResult` 能解析出 hunk 和行引用。
+- 已能通过 GitHub REST 对真实 PR 拉到文件列表与 patch。
+- `DiffParseResult` 能解析出 hunk、行引用和 `lineRefMap`。
 - 后续评论可以稳定锚定到具体 diff 行，不靠裸行号。
 
 ### LangSmith
@@ -356,6 +357,20 @@
 ### 目标
 
 让规则扫描成为审查链路的稳定输入，不让 AI 单独承担所有问题发现。
+
+### 当前状态
+
+已完成基础版：
+
+- `services/rule-engine` 新增 `/scan`，包装 semgrep 与 eslint 执行入口。
+- 规则执行支持超时和失败兜底，单个引擎失败时返回 failures，不阻断整体响应。
+- `packages/review-core` 新增 `normalizeRuleViolations`，把 semgrep/eslint 原始结果标准化为 `RuleViolation`。
+- Worker 首轮审查输入已接收 `RuleViolation[]`。
+
+当前限制：
+
+- repo/module 级规则配置入口尚未落地。
+- 本地环境未必安装 semgrep，真实命中数量依赖运行环境。
 
 ### 代码落点
 
@@ -372,7 +387,7 @@
 
 ### 验收标准
 
-- 能在真实仓库上执行 semgrep。
+- sidecar 能在 semgrep/eslint 可用时执行真实扫描。
 - 规则结果能转成统一 `RuleViolationSchema`。
 - Review Pipeline 可以消费规则结果，不再只依赖 LLM。
 
@@ -389,12 +404,25 @@
 
 ### 当前状态
 
-已有骨架：
+已完成基础版：
 
 - `packages/review-core`
   - `evaluateReviewTriage`
 - `apps/worker`
-  - sample pipeline
+  - `runFirstPassReviewPipeline`
+
+当前实现：
+
+- 首轮输入包含 diff、PR file 和规则结果。
+- 先用启发式 first-pass reviewer 生成结构化 `ReviewTriageDecision`，避免在 LLM gateway 未落地前阻塞主链路。
+- 高风险规则命中会输出 `need_more_context` 并保留 provisional findings。
+- 无规则证据时优先输出 `insufficient_evidence` 或 `no_issue`，不硬造最终评论。
+
+当前限制：
+
+- `packages/prompt-builder`、`packages/llm-gateway` 尚未拆包。
+- LangSmith trace 尚未接入，本次仅保留 first-pass 输入输出边界。
+- `file_reviews.triage_decision` 落库将在 review job 持久化模块接入。
 
 ### 代码落点
 
@@ -421,7 +449,7 @@
 
 ### 验收标准
 
-- 对真实或 fixture PR 能返回结构化 `ReviewTriageDecision`。
+- 对 fixture PR 能返回结构化 `ReviewTriageDecision`。
 - 对“高风险但证据不足”的场景能稳定输出 `need_more_context`。
 - 不会在证据不足时强行给出大量最终评论。
 

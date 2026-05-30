@@ -1,5 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { RepositoryRef } from "@ai-pr-review/shared-types";
+import {
+  PullRequestSchema,
+  type PullRequest,
+  type RepositoryRef,
+} from "@ai-pr-review/shared-types";
 import { ApiConfigService } from "./api-config.service.js";
 import { ApiModuleError } from "./api-error.js";
 
@@ -14,6 +18,30 @@ type GitHubRepositoryPayload = {
     triage?: boolean;
     pull?: boolean;
   };
+};
+
+type GitHubPullRequestPayload = {
+  number: number;
+  title: string;
+  user?: { login?: string };
+  base: { ref: string; sha: string };
+  head: { ref: string; sha: string };
+  changed_files: number;
+  additions: number;
+  deletions: number;
+  state: "open" | "closed";
+  merged_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type GitHubPullRequestFilePayload = {
+  filename: string;
+  previous_filename?: string;
+  status: "added" | "modified" | "removed" | "renamed" | "changed";
+  additions: number;
+  deletions: number;
+  patch?: string;
 };
 
 export type GitHubRepositoryInfo = {
@@ -96,6 +124,106 @@ export class GitHubClientService {
       cloneUrl: payload.clone_url,
       isPrivate: payload.private,
       canRead,
+    };
+  }
+
+  async getPullRequest(
+    repository: RepositoryRef,
+    prNumber: number,
+  ): Promise<PullRequest> {
+    const [prPayload, filePayloads] = await Promise.all([
+      this.requestJson<GitHubPullRequestPayload>(
+        `/repos/${repository.owner}/${repository.repo}/pulls/${prNumber}`,
+        repository,
+      ),
+      this.requestJson<GitHubPullRequestFilePayload[]>(
+        `/repos/${repository.owner}/${repository.repo}/pulls/${prNumber}/files?per_page=100`,
+        repository,
+      ),
+    ]);
+
+    return PullRequestSchema.parse({
+      provider: repository.provider,
+      owner: repository.owner,
+      repo: repository.repo,
+      prNumber: prPayload.number,
+      title: prPayload.title,
+      authorLogin: prPayload.user?.login,
+      baseBranch: prPayload.base.ref,
+      headBranch: prPayload.head.ref,
+      baseSha: prPayload.base.sha,
+      headSha: prPayload.head.sha,
+      changedFiles: prPayload.changed_files,
+      additions: prPayload.additions,
+      deletions: prPayload.deletions,
+      state: prPayload.merged_at ? "merged" : prPayload.state,
+      files: filePayloads.map((file) => ({
+        filePath: file.filename,
+        previousFilePath: file.previous_filename,
+        status: file.status === "changed" ? "modified" : file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+      })),
+      rawPayload: {
+        pullRequest: prPayload,
+      },
+      createdAt: prPayload.created_at,
+      updatedAt: prPayload.updated_at,
+    });
+  }
+
+  private async requestJson<T>(
+    path: string,
+    repository: RepositoryRef,
+  ): Promise<T> {
+    const response = await fetch(`https://api.github.com${path}`, {
+      headers: this.buildHeaders(),
+    });
+
+    if (response.status === 401) {
+      throw new ApiModuleError(
+        "GITHUB_UNAUTHORIZED",
+        "GitHub 认证失败，请检查 GITHUB_TOKEN",
+        401,
+      );
+    }
+
+    if (response.status === 404) {
+      throw new ApiModuleError(
+        "REPOSITORY_NOT_FOUND",
+        "目标仓库或 PR 不存在，或当前 token 无法看到该资源",
+        404,
+        repository,
+      );
+    }
+
+    if (response.status === 403) {
+      throw new ApiModuleError(
+        "REPOSITORY_FORBIDDEN",
+        "当前 token 没有访问该 GitHub 资源的权限",
+        403,
+        repository,
+      );
+    }
+
+    if (!response.ok) {
+      throw new ApiModuleError(
+        "INTERNAL_ERROR",
+        `GitHub API 请求失败，状态码 ${response.status}`,
+        502,
+      );
+    }
+
+    return (await response.json()) as T;
+  }
+
+  private buildHeaders(): Record<string, string> {
+    return {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${this.configService.githubToken}`,
+      "User-Agent": "ai-pr-review-assistant",
+      "X-GitHub-Api-Version": "2022-11-28",
     };
   }
 }
