@@ -214,7 +214,9 @@ export const ApiErrorCodeSchema = z.enum([
   "GITHUB_UNAUTHORIZED",
   "REPOSITORY_NOT_FOUND",
   "REPOSITORY_FORBIDDEN",
+  "SCAN_NOT_FOUND",
   "DATABASE_ERROR",
+  "REDIS_ERROR",
   "INTERNAL_ERROR",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
@@ -228,6 +230,8 @@ export const ApiErrorResponseSchema = z.object({
 });
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
+export const REPOSITORY_SCAN_QUEUE_NAME = "repository-scan";
+
 export const RepositoryScanRequestSchema = z.object({
   repositoryId: UuidSchema,
   scanType: RepositoryScanTypeSchema.default("full"),
@@ -235,6 +239,15 @@ export const RepositoryScanRequestSchema = z.object({
   requestedBy: NonEmptyStringSchema.optional(),
 });
 export type RepositoryScanRequest = z.infer<typeof RepositoryScanRequestSchema>;
+
+export const RepositoryScanTriggerRequestSchema = z.object({
+  scanType: RepositoryScanTypeSchema.default("full"),
+  targetSha: NonEmptyStringSchema.optional(),
+  requestedBy: NonEmptyStringSchema.optional(),
+});
+export type RepositoryScanTriggerRequest = z.infer<
+  typeof RepositoryScanTriggerRequestSchema
+>;
 
 export const RepositoryScanSchema = z.object({
   id: UuidSchema.optional(),
@@ -251,6 +264,26 @@ export const RepositoryScanSchema = z.object({
 });
 export type RepositoryScan = z.infer<typeof RepositoryScanSchema>;
 
+export const RepositoryScanTriggerResponseSchema = z.object({
+  scan: RepositoryScanSchema,
+  queued: z.boolean(),
+  deduplicated: z.boolean(),
+});
+export type RepositoryScanTriggerResponse = z.infer<
+  typeof RepositoryScanTriggerResponseSchema
+>;
+
+export const RepositoryScanJobPayloadSchema = z.object({
+  scanId: UuidSchema,
+  repositoryId: UuidSchema,
+  scanType: RepositoryScanTypeSchema,
+  targetSha: NonEmptyStringSchema,
+  requestedBy: NonEmptyStringSchema.optional(),
+});
+export type RepositoryScanJobPayload = z.infer<
+  typeof RepositoryScanJobPayloadSchema
+>;
+
 export const RepositoryFileSchema = z.object({
   id: UuidSchema.optional(),
   repositoryId: UuidSchema,
@@ -265,6 +298,67 @@ export const RepositoryFileSchema = z.object({
   metadata: MetadataSchema.optional(),
 });
 export type RepositoryFile = z.infer<typeof RepositoryFileSchema>;
+
+export const RepositoryScanStartedEventSchema = z.object({
+  eventName: z.literal("repository_scan_started"),
+  occurredAt: TimestampSchema,
+  payload: z.object({
+    repositoryId: UuidSchema,
+    scanId: UuidSchema,
+    targetSha: NonEmptyStringSchema,
+    status: z.literal("running"),
+  }),
+});
+export type RepositoryScanStartedEvent = z.infer<
+  typeof RepositoryScanStartedEventSchema
+>;
+
+export const RepositoryScanCompletedEventSchema = z.object({
+  eventName: z.literal("repository_scan_completed"),
+  occurredAt: TimestampSchema,
+  payload: z.object({
+    repositoryId: UuidSchema,
+    scanId: UuidSchema,
+    targetSha: NonEmptyStringSchema,
+    status: z.literal("done"),
+    fileCount: z.number().int().nonnegative(),
+    symbolCount: z.number().int().nonnegative(),
+    semanticDocumentCount: z.number().int().nonnegative(),
+  }),
+});
+export type RepositoryScanCompletedEvent = z.infer<
+  typeof RepositoryScanCompletedEventSchema
+>;
+
+export const RepositoryScanFailedEventSchema = z.object({
+  eventName: z.literal("repository_scan_failed"),
+  occurredAt: TimestampSchema,
+  payload: z.object({
+    repositoryId: UuidSchema,
+    scanId: UuidSchema,
+    targetSha: NonEmptyStringSchema,
+    status: z.literal("failed"),
+    errorMessage: NonEmptyStringSchema,
+  }),
+});
+export type RepositoryScanFailedEvent = z.infer<
+  typeof RepositoryScanFailedEventSchema
+>;
+
+export const RepositoryScanEventSchema = z.discriminatedUnion("eventName", [
+  RepositoryScanStartedEventSchema,
+  RepositoryScanCompletedEventSchema,
+  RepositoryScanFailedEventSchema,
+]);
+export type RepositoryScanEvent = z.infer<typeof RepositoryScanEventSchema>;
+
+export const RepositoryScanStatusResponseSchema = z.object({
+  scan: RepositoryScanSchema,
+  events: z.array(RepositoryScanEventSchema).default([]),
+});
+export type RepositoryScanStatusResponse = z.infer<
+  typeof RepositoryScanStatusResponseSchema
+>;
 
 export const SymbolSchema = z.object({
   id: UuidSchema.optional(),
@@ -654,23 +748,6 @@ export const ReviewAggregateResultSchema = z.object({
 export type ReviewAggregateResult = z.infer<typeof ReviewAggregateResultSchema>;
 
 // 实时事件契约。前端只订阅这些边界稳定的消息，不直接依赖内部任务对象。
-export const RepositoryScanCompletedEventSchema = z.object({
-  eventName: z.literal("repository_scan_completed"),
-  occurredAt: TimestampSchema,
-  payload: z.object({
-    repositoryId: UuidSchema,
-    scanId: UuidSchema,
-    targetSha: NonEmptyStringSchema,
-    status: z.literal("done"),
-    fileCount: z.number().int().nonnegative(),
-    symbolCount: z.number().int().nonnegative(),
-    semanticDocumentCount: z.number().int().nonnegative(),
-  }),
-});
-export type RepositoryScanCompletedEvent = z.infer<
-  typeof RepositoryScanCompletedEventSchema
->;
-
 export const ReviewJobProgressEventSchema = z.object({
   eventName: z.literal("review_job_progress"),
   occurredAt: TimestampSchema,

@@ -30,4 +30,12 @@ export class ApiConfigService {
     }
     return value;
   }
+
+  get redisUrl(): string {
+    const value = process.env.REDIS_URL?.trim();
+    if (!value) {
+      throw new ApiModuleError("REDIS_ERROR", "缺少 REDIS_URL 环境变量", 500);
+    }
+    return value;
+  }
 }

@@ -71,7 +71,7 @@
 | M0   | 契约与持久化真源        | schema、DDL、fixtures                  | 无             | 不接                   |
 | M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                   |
 | M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                   |
-| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接                   |
+| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源     |
 | M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 可选，不必先接         |
 | M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                   |
 | M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制       |
@@ -136,7 +136,7 @@
 
 ### 当前状态
 
-开发中（实现完成，待提 PR）。
+已完成，当前处于持续维护阶段。
 
 ### 目标
 
@@ -217,6 +217,30 @@
 
 构建“代码真相层”，为后续 triage 和上下文检索提供可靠结构化证据。
 
+### 当前状态
+
+开发中，已完成当前最小可运行链路：
+
+- 新建 `packages/repo-intelligence`
+- 接入 TS/JS 结构化索引提取
+- 接入语言 / 框架识别
+- 写入 `repository_files`、`symbols`、`symbol_edges`
+- 补齐数据库表注释和列注释，方便查库和 Navicat 浏览
+
+当前真实验证结果：
+
+- 已在真实仓库 `zhaoyongze123/ai-pr-review-assistant` 跑通扫描
+- 最新一次扫描落库：
+  - `76` 个 `repository_files`
+  - `348` 个 `symbols`
+  - `139` 条 `symbol_edges`
+
+与原计划差异：
+
+- 当前先完成 TS/JS 主链路
+- 非 TS/JS 的 `tree-sitter` 兜底尚未接入
+- 查询能力先落在 Worker store 层，HTTP 查询面放到后续模块再暴露
+
 ### 代码落点
 
 - 建议新增 `packages/repo-intelligence`
@@ -252,6 +276,16 @@
 - 能查到某个 symbol 的 callers / callees。
 - 文件有基础 summary，关键模块有 risk tags。
 - TS/JS 仓库输出质量明显优于兜底模式。
+
+### 当前验收结论
+
+- 已满足：
+  - 能查到 symbol 定义位置
+  - 能查到至少一条 caller / callee 边
+  - 文件已生成基础 summary 和 risk tags
+- 待后续增强：
+  - 非 TS/JS 兜底提取
+  - 对外查询接口
 
 ### LangSmith
 

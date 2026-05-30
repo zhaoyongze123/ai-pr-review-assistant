@@ -1,0 +1,40 @@
+{
+  "scan": {
+    "id": "f66d8668-d7d8-447f-9d94-cfb3e4f98f1e",
+    "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+    "scanType": "full",
+    "targetSha": "branch:main",
+    "status": "done",
+    "languageSummary": [],
+    "frameworkSummary": ["scan_pipeline_ready"],
+    "startedAt": "2026-05-30T05:20:01.000Z",
+    "finishedAt": "2026-05-30T05:20:02.000Z",
+    "createdAt": "2026-05-30T05:20:00.000Z",
+    "updatedAt": "2026-05-30T05:20:02.000Z"
+  },
+  "events": [
+    {
+      "eventName": "repository_scan_started",
+      "occurredAt": "2026-05-30T05:20:01.000Z",
+      "payload": {
+        "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+        "scanId": "f66d8668-d7d8-447f-9d94-cfb3e4f98f1e",
+        "targetSha": "branch:main",
+        "status": "running"
+      }
+    },
+    {
+      "eventName": "repository_scan_completed",
+      "occurredAt": "2026-05-30T05:20:02.000Z",
+      "payload": {
+        "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+        "scanId": "f66d8668-d7d8-447f-9d94-cfb3e4f98f1e",
+        "targetSha": "branch:main",
+        "status": "done",
+        "fileCount": 0,
+        "symbolCount": 0,
+        "semanticDocumentCount": 0
+      }
+    }
+  ]
+}
