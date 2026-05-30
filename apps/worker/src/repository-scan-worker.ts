@@ -7,6 +7,7 @@ import {
   type RepositoryScanFailedEvent,
 } from "@ai-pr-review/shared-types";
 import { analyzeRepositorySnapshot } from "@ai-pr-review/repo-intelligence";
+import { buildSemanticDocuments } from "@ai-pr-review/retrieval-core";
 import { Worker } from "bullmq";
 import Redis from "ioredis";
 import { Pool } from "pg";
@@ -15,6 +16,7 @@ import { withClonedRepository } from "./repository-clone.js";
 import { RepositoryScanEventStore } from "./repository-scan-event-store.js";
 import { RepositorySourceStore } from "./repository-source-store.js";
 import { RepositoryScanStore } from "./repository-scan-store.js";
+import { SemanticDocumentStore } from "./semantic-document-store.js";
 import { WorkerConfig } from "./worker-config.js";
 
 export function createRepositoryScanWorker(config = new WorkerConfig()) {
@@ -25,6 +27,7 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
   const scanStore = new RepositoryScanStore(pool);
   const repositorySourceStore = new RepositorySourceStore(pool);
   const repositoryIndexStore = new RepositoryIndexStore(pool);
+  const semanticDocumentStore = new SemanticDocumentStore(pool);
   const eventStore = new RepositoryScanEventStore(eventRedis);
 
   const worker = new Worker<RepositoryScanJobPayload>(
@@ -56,12 +59,25 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
           cloneUrl: repository.cloneUrl,
           ref: payload.targetSha,
           authToken: config.githubToken,
-          callback: async (rootDir) =>
-            analyzeRepositorySnapshot({
-              repositoryId: payload.repositoryId,
-              scanId: payload.scanId,
-              rootDir,
-            }),
+          callback: async (rootDir) => {
+            const [structured, semanticDocuments] = await Promise.all([
+              analyzeRepositorySnapshot({
+                repositoryId: payload.repositoryId,
+                scanId: payload.scanId,
+                rootDir,
+              }),
+              buildSemanticDocuments({
+                repositoryId: payload.repositoryId,
+                scanId: payload.scanId,
+                rootDir,
+              }),
+            ]);
+
+            return {
+              ...structured,
+              semanticDocuments,
+            };
+          },
         });
 
         await repositoryIndexStore.replaceForScan(
@@ -73,6 +89,11 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
             edges: analysis.edges,
           },
         );
+        await semanticDocumentStore.replaceForScan(
+          payload.repositoryId,
+          payload.scanId,
+          analysis.semanticDocuments,
+        );
 
         const doneScan = await scanStore.markDone(
           payload.scanId,
@@ -80,6 +101,9 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
           analysis.frameworkSummary,
         );
         const structuredCounts = await scanStore.getStructuredCounts(
+          payload.scanId,
+        );
+        const semanticDocumentCount = await semanticDocumentStore.countByScan(
           payload.scanId,
         );
         const completedEvent: RepositoryScanCompletedEvent = {
@@ -92,7 +116,7 @@ export function createRepositoryScanWorker(config = new WorkerConfig()) {
             status: "done",
             fileCount: structuredCounts.fileCount,
             symbolCount: structuredCounts.symbolCount,
-            semanticDocumentCount: 0,
+            semanticDocumentCount,
           },
         };
         await eventStore.append(payload.scanId, completedEvent);
