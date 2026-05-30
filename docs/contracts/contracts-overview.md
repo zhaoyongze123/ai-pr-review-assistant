@@ -64,7 +64,11 @@ Mock 真源：
 - `RepositoryConnectRequest`
 - `RepositoryConnectResponse`
 - `ApiErrorResponse`
+- `RepositoryScanTriggerRequest`
+- `RepositoryScanTriggerResponse`
 - `RepositoryScan`
+- `RepositoryScanStatusResponse`
+- `RepositoryScanEvent`
 - `RepositoryFile`
 - `Symbol`
 - `SymbolEdge`
