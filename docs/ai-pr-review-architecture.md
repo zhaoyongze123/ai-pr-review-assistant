@@ -1,1538 +1,947 @@
-# AI PR Review 助手详细开发方案
+# AI PR Review 助手架构设计文档（V2）
 
-## 1. 文档目标
+## 1. 文档定位
 
-本文档用于指导 `AI PR Review 助手` 的本地开发与实现，重点围绕“数据如何流转”来定义系统架构、模块边界、数据库结构、前后端职责、接口契约与本地运行方式。
+本文档是 `AI PR Review 助手` 的当前设计真源，目标不是描述一个“会调大模型的 PR 工具”，而是定义一个可落地的 `Repository Intelligence + Dynamic Context Retrieval + Quality Gates` 系统。
 
-约束范围：
+本文档重点回答 5 个问题：
 
-- 仅覆盖本地开发与联调方案
-- 部署方式限定为 `Docker Compose`
-- 不展开线上部署、Kubernetes、灰度发布、多地域容灾
-- 默认目标平台为 GitHub Pull Request 审查场景
+1. 用户接入任意 GitHub 仓库后，系统如何自动构建可检索的仓库语义地图。
+2. 用户输入 PR 链接后，系统如何做首轮审查、上下文补全、二轮审查和最终结果聚合。
+3. 哪些能力可以直接复用现成框架，哪些必须自己实现。
+4. API、Worker、前端、数据库和本地基础设施如何分层。
+5. 一期应该如何分阶段落地，避免一上来就做成“全功能但不可用”的系统。
 
----
+范围约束：
 
-## 2. 设计目标
+- 只覆盖本地开发与联调。
+- 运行环境限定为 `Docker Compose`。
+- 目标平台为 `GitHub Pull Request Review`。
+- 一期优先保证 `TypeScript / JavaScript` 仓库体验最佳。
+- 一期允许“任意仓库可接入”，但不承诺所有语言都具备同等深度的语义理解。
 
-### 2.1 核心目标
+## 2. 核心设计结论
 
-1. 自动获取 GitHub PR 元信息、改动文件与 patch diff。
-2. 对 PR 中的每个文件执行“规则审查 + AI 审查”双通路分析。
-3. 以文件为粒度流式返回审查结果，支持前端实时增量展示。
-4. 将 AI 输出转为结构化评论，并与 diff 精准联动。
-5. 支持缓存复用、历史检索增强、可选 GitHub Review 回写。
+### 2.1 系统本质
 
-### 2.2 非目标
+这个系统不是传统的“Diff + Prompt + LLM 输出评论”。
 
-- 不做完整代码托管平台，只聚焦 PR Review。
-- 不做全仓库静态扫描平台。
-- 不做多人协作权限系统一期实现。
-- 不做线上多租户隔离与计费系统。
+它的正确形态是：
 
-### 2.3 架构原则
+```text
+GitHub Repository
+  -> Repository Intelligence
+  -> Pull Request First-pass Review
+  -> Triage Decision
+  -> Dynamic Context Retrieval
+  -> Second-pass Review
+  -> Comment Admission Gate
+  -> Quality Scoring
+  -> PR Summary / Inline Comments / Merge Suggestion
+```
 
-- 数据流优先：所有模块以输入/输出契约解耦。
-- 文件粒度并发：每个文件或切片作为独立分析单元。
-- 结构化优先：LLM 输出必须以 JSON Schema 收敛。
-- 可回放：关键请求、响应、状态变化可审计。
-- 可缓存：相同 PR + 相同 commit SHA 结果可复用。
+### 2.2 三个关键判断
 
----
+1. 代码事实不能依赖向量库猜测，必须来自结构化索引。
+2. RAG 只用于补充模块职责、设计意图、README、ADR、接口文档等语义背景。
+3. 输出质量的决定因素不是模型是否“会检索”，而是是否有严格的 `Triage -> Context Request -> Admission Gate` 流程。
+
+### 2.3 一期产品原则
+
+- 不做全自动无限制 Agent。
+- 不做全仓源码向量化。
+- 不做完整 Sourcegraph 替代品。
+- 不做泛泛而谈的“建议优化”评论生成器。
+- 不做只看 diff 的浅层审查。
 
 ## 3. 总体架构
 
-### 3.1 分层视图
-
-- 接入层：GitHub API、前端 UI、WebSocket 客户端
-- 应用层：PR Fetcher、Orchestrator、Prompt Builder、Response Parser、GitHub Writer
-- 分析层：Rule Engine、LLM Gateway
-- 数据层：PostgreSQL、pgvector、Redis、MinIO
-- 可观测层：OpenTelemetry、日志、任务状态事件
-
-### 3.2 Mermaid 架构图
+### 3.1 分层架构图
 
 ```mermaid
 flowchart LR
-    User["用户 / 前端 React"] -->|REST| Api["Backend API / NestJS"]
-    User -->|WebSocket| Ws["Socket Gateway"]
+    User["用户"] --> Web["Web App<br/>React"]
+    Web --> Api["API<br/>NestJS"]
+    Web --> Ws["WebSocket"]
 
-    Api --> Orchestrator["Orchestrator"]
-    Api --> GithubWriter["GitHub Review Writer"]
+    Api --> RepoSvc["Repository Service"]
+    Api --> ReviewSvc["Review Service"]
 
-    Orchestrator --> Fetcher["PR Fetcher"]
-    Fetcher --> GitHub["GitHub GraphQL + REST API"]
+    RepoSvc --> ScanOrc["Repository Scan Orchestrator"]
+    ReviewSvc --> ReviewOrc["Review Orchestrator"]
 
-    Orchestrator --> DiffParser["Diff Parser + Line Mapper"]
-    Orchestrator --> Queue["BullMQ Queue"]
-    Queue --> Worker["Review Worker"]
+    ScanOrc --> GitHub["GitHub API"]
+    ScanOrc --> RepoWorker["Repository Intelligence Worker"]
 
-    Worker --> RuleEngine["Rule Engine<br/>Semgrep / ESLint API"]
-    Worker --> PromptBuilder["Prompt Builder"]
-    PromptBuilder --> LLMGateway["LLM Gateway"]
-    LLMGateway --> ProviderA["OpenAI"]
-    LLMGateway --> ProviderB["Anthropic"]
-    LLMGateway --> ProviderC["Azure OpenAI"]
+    ReviewOrc --> PrFetcher["PR Fetcher"]
+    ReviewOrc --> DiffCore["Diff Parser / Line Mapper"]
+    ReviewOrc --> ReviewWorker["Review Worker"]
 
-    Worker --> ResponseParser["Response Parser"]
-    RuleEngine --> Merger["Result Merger"]
-    ResponseParser --> Merger["Result Merger"]
+    RepoWorker --> StructIndex["Structured Index Builder"]
+    RepoWorker --> SemanticIndex["Semantic Corpus Builder"]
 
-    Merger --> Postgres["PostgreSQL"]
-    Merger --> Vector["pgvector"]
-    LLMGateway --> MinIO["MinIO"]
-    Orchestrator --> Redis["Redis"]
+    ReviewWorker --> RuleEngine["Rule Engine"]
+    ReviewWorker --> Triage["Triage Decision"]
+    ReviewWorker --> ContextFetcher["Context Fetcher"]
+    ReviewWorker --> LLM["LLM Gateway"]
+    ReviewWorker --> Gate["Admission Gate / Quality Score"]
 
-    Postgres --> Api
-    Api --> Ws
-    Ws --> User
+    StructIndex --> Postgres["PostgreSQL + pgvector"]
+    SemanticIndex --> Postgres
+    ReviewWorker --> Postgres
+    ReviewWorker --> Redis["Redis / BullMQ"]
+    ReviewWorker --> MinIO["MinIO"]
 
-    Api --> OTel["OpenTelemetry"]
-    Worker --> OTel
+    Api --> Postgres
+    Api --> Redis
+    Ws --> Web
 ```
 
-### 3.3 核心模块职责
+### 3.2 运行主线
 
-| 模块 | 职责 | 输入 | 输出 |
-| --- | --- | --- | --- |
-| PR Fetcher | 拉取 PR 元信息、文件列表、patch | repo、PR number | PR 基础数据、文件 patch |
-| Diff Parser | 解析 patch，构建 hunk 与行号映射 | patch 文本 | `DiffHunk[]`、行号映射 |
-| Orchestrator | 切分任务、入队、广播进度、聚合状态 | PR 数据、patch、配置 | `review_jobs`、队列任务 |
-| Rule Engine | 规则扫描 | 文件内容、diff、规则配置 | `RuleViolation[]` |
-| Prompt Builder | 构建多语言 Prompt | 语言、diff、上下文、历史样本 | 结构化模型请求 |
-| LLM Gateway | 多 provider 调度、超时回退、SSE 处理 | Prompt 请求 | 原始响应、结构化输出 |
-| Response Parser | JSON 校验、行号反解、结果标准化 | LLM 输出、行号映射 | `AiReviewComment[]` |
-| Result Merger | 合并规则与 AI 结果并写库 | Rule + AI 结果 | 文件级、评论级持久化 |
-| GitHub Writer | 把评论回写 GitHub | 审查评论 | GitHub Review Comments |
+系统分两条主线：
 
----
+- 仓库接入主线：构建 `Repository Intelligence`
+- PR 审查主线：执行 `Evidence-driven Review`
 
-## 4. 数据流设计
+这两条主线解耦。仓库语义地图可以复用，不应该每次 PR 都重扫整仓。
 
-### 4.1 主流程
+## 4. 仓库接入与 Repository Intelligence
 
-1. 前端触发“分析 PR”。
-2. 后端创建 `review_job` 记录。
-3. PR Fetcher 调 GitHub GraphQL 获取 PR 基础信息和文件列表。
-4. PR Fetcher 调 GitHub REST 获取各文件 patch。
-5. Diff Parser 将 patch 解析为结构化 hunk，并建立“diff 行标识 -> 新文件真实行号”映射。
-6. Orchestrator 按文件语言分组，按 token 阈值决定是否切片。
-7. 每个文件/切片作为独立任务写入 BullMQ。
-8. Worker 并发执行 Rule Engine 和 LLM 分析。
-9. Response Parser 校验 LLM 输出 JSON，完成行号映射。
-10. Result Merger 合并规则结果与 AI 结果，写入 PostgreSQL。
-11. Orchestrator 广播 `file_review_complete` 事件。
-12. 前端增量更新文件列表与 Diff Viewer。
-13. 所有任务完成后更新 `review_jobs.status = done`。
+### 4.1 目标
 
-### 4.2 Mermaid 流程图
+当用户接入一个 GitHub 仓库后，系统自动构建一个“轻量仓库语义地图”，供后续 PR Review 按需检索。
+
+这个语义地图至少要回答：
+
+- 这个仓库有哪些模块。
+- 每个文件大致负责什么。
+- 每个关键 symbol 定义在哪里。
+- 谁调用了谁。
+- 哪些文件涉及 `auth / payment / permission / transaction / database / cache / retry / feature flag`。
+- 哪些文档可以解释该模块的业务背景和设计意图。
+
+### 4.2 接入流程图
 
 ```mermaid
 flowchart TD
-    A["前端触发分析"] --> B["创建 review_job"]
-    B --> C["获取 PR 元信息和文件列表"]
-    C --> D["获取每个文件 patch"]
-    D --> E["解析 patch 和行号映射"]
-    E --> F{"文件是否超出 token 阈值"}
-    F -- 否 --> G["按文件入队"]
-    F -- 是 --> H["按 hunk 或窗口切片入队"]
-    G --> I["Worker 执行规则审查与 AI 审查"]
+    A["用户接入 GitHub 仓库"] --> B["保存 repository 记录"]
+    B --> C["拉取默认分支代码快照"]
+    C --> D["识别语言、框架、目录结构"]
+    D --> E["提取代码结构化索引"]
+    D --> F["提取文档语义语料"]
+    E --> G["生成文件职责和模块摘要"]
+    F --> H["切片并写入向量索引"]
+    G --> I["写入 PostgreSQL"]
     H --> I
-    I --> J["结构化解析 AI 输出"]
-    J --> K["合并规则结果与 AI 结果"]
-    K --> L["写入 PostgreSQL / pgvector / MinIO"]
-    L --> M["广播文件完成事件"]
-    M --> N{"是否全部完成"}
-    N -- 否 --> I
-    N -- 是 --> O["更新 job 状态为 done"]
+    I --> J["形成 Repository Intelligence"]
 ```
 
-### 4.3 Mermaid 时序图
+### 4.3 两层知识库，不是一层 RAG
+
+#### 第一层：结构化索引主知识库
+
+这层存“代码真相”，不依赖 embedding。
+
+核心内容：
+
+- `Symbol Index`
+- `Import Graph`
+- `Call Graph`
+- `File Summary`
+- `Module Summary`
+- `Risk Tags`
+- `Test Links`
+- `Schema / Migration / Config Links`
+
+典型记录：
+
+```json
+{
+  "symbol": "verifyToken",
+  "filePath": "src/auth/jwt.ts",
+  "kind": "function",
+  "moduleName": "auth",
+  "callers": ["authMiddleware", "refreshSession"],
+  "callees": ["decodeJwt", "loadUserPolicy"],
+  "tests": ["src/auth/jwt.spec.ts"],
+  "riskTags": ["auth"]
+}
+```
+
+#### 第二层：语义语料辅助库
+
+这层才做 chunk 和 embedding。
+
+只存适合语义检索的内容：
+
+- `README.md`
+- `docs/**/*.md`
+- ADR / Architecture Notes
+- API 设计文档
+- 配置说明
+- 文件摘要
+- 模块摘要
+- 规则说明
+
+不把整个源码原文直接塞进向量库。源码全文 embedding 会导致召回噪音很高。
+
+### 4.4 仓库扫描分阶段实现
+
+#### P0：一期可用实现
+
+目标：
+
+- 支持任意 GitHub 仓库接入。
+- 对 `TS / JS` 仓库给出高质量结构化索引。
+- 对其他语言至少给出目录级、文件级、文档级语义地图。
+
+实现方式：
+
+- GitHub 拉取：只抓默认分支代码快照。
+- 技术栈识别：根据 `package.json`、`pyproject.toml`、`go.mod`、`pom.xml` 等规则识别。
+- TS/JS 结构化解析：优先使用 `ts-morph` 或 TypeScript Compiler API。
+- 多语言兜底解析：使用 `tree-sitter` 做统一语法树解析和基础 symbol 提取。
+- 文档抽取：扫描 `README`、`docs`、`adr`、`openapi`、`schema`、`config`。
+
+#### P1：增强实现
+
+- 增加 `Python / Go` 深度提取器。
+- 增加跨文件符号引用解析。
+- 增加测试用例与被测 symbol 的自动关联。
+- 增加风险模块自动标注。
+
+#### P2：高级实现
+
+- 增加增量索引刷新。
+- 增加跨 commit 语义地图版本化。
+- 增加历史 review pattern 检索。
+
+### 4.5 哪些直接复用，哪些必须自己写
+
+| 能力                 | 可以直接用                           | 结论     | 自研边界                              |
+| -------------------- | ------------------------------------ | -------- | ------------------------------------- |
+| GitHub 仓库接入      | `Octokit`、GitHub REST / GraphQL API | 直接用   | 接入任务编排、重试、分页、缓存自己写  |
+| TS/JS AST 解析       | `ts-morph`                           | 直接用   | symbol 归一化、调用边、测试关联自己写 |
+| 多语言统一解析       | `tree-sitter`                        | 直接用   | 不同语言的语义抽取规则自己写          |
+| 结构化搜索辅助       | `ast-grep`                           | 可选     | 可作为补充检索，不作为主存储          |
+| 文档切片与 embedding | 现成 embedding API + 自己分块        | 半直接用 | 分块策略、元数据、重建逻辑自己写      |
+| 向量存储             | `pgvector`                           | 直接用   | 检索排序、过滤、召回策略自己写        |
+| 风险标签             | 无现成通用方案                       | 自己写   | 先规则化，后续再引入模型辅助          |
+
+### 4.6 不建议采用的方案
+
+以下方案听起来省事，实际会拖垮质量：
+
+- 整仓源码全部做 embedding。
+- 直接把仓库丢给大模型做一次全量总结。
+- 一期就做 Neo4j 或完整图数据库。
+- 一期就做 IDE 级别 LSP / 索引平台。
+- 直接接入大型现成代码智能平台并深度绑定其内部索引格式。
+
+原因很简单：一期真正需要的是“可控、可解释、能服务 PR Review 的仓库事实层”，不是通用代码搜索引擎。
+
+## 5. PR 审查主流程
+
+### 5.1 核心目标
+
+给定一个 PR 链接，系统输出：
+
+- PR 总结
+- 风险摘要
+- 文件级审查结果
+- Inline Review 评论
+- 最终合并建议
+
+但系统不能在首轮就直接下最终结论。必须先判断当前证据是否足够。
+
+### 5.2 流程图
 
 ```mermaid
-sequenceDiagram
-    participant UI as 前端 UI
-    participant API as NestJS API
-    participant ORC as Orchestrator
-    participant GH as GitHub API
-    participant Q as BullMQ
-    participant WK as Review Worker
-    participant LLM as LLM Gateway
-    participant DB as PostgreSQL
-    participant WS as WebSocket
-
-    UI->>API: POST /api/review-jobs
-    API->>DB: 创建 review_job
-    API->>ORC: 启动分析
-    ORC->>GH: 拉取 PR 元信息 + 文件列表
-    ORC->>GH: 拉取 patch
-    ORC->>Q: 为每个文件/切片入队
-
-    loop 每个文件任务
-        Q->>WK: 分发任务
-        par 规则审查
-            WK->>WK: 执行 Semgrep / ESLint
-        and AI 审查
-            WK->>LLM: 发送结构化 Prompt
-            LLM-->>WK: SSE/JSON 响应
-        end
-        WK->>DB: 写 file_reviews + review_comments
-        WK->>WS: 推送 file_review_complete
-        WS-->>UI: 增量更新结果
-    end
-
-    ORC->>DB: 更新 review_job done
-    ORC->>WS: 推送 review_job_done
-    WS-->>UI: 刷新整体状态
+flowchart TD
+    A["输入 PR 链接"] --> B["拉取 PR 元信息和变更文件"]
+    B --> C["获取 patch 并解析 diff"]
+    C --> D["首轮规则审查 + 首轮 AI 审查"]
+    D --> E["Triage Decision"]
+    E --> F{"证据是否足够"}
+    F -- 是 --> G["生成候选评论"]
+    F -- 否 --> H["发起 Context Request"]
+    H --> I["结构化检索相关代码和文档"]
+    I --> J["二轮审查"]
+    J --> G
+    G --> K["Comment Admission Gate"]
+    K --> L["Quality Scoring"]
+    L --> M["聚合 PR Summary / Inline Comments / Merge Suggestion"]
 ```
 
----
+### 5.3 GitHub 数据拉取策略
 
-## 5. 技术栈
+#### 推荐做法
 
-### 5.1 后端
+- `GraphQL`：拉 PR 元信息、作者、分支、状态、文件列表、总文件数等。
+- `REST Pull Request Files API`：拉每个变更文件的 `patch`、`filename`、`status`、`additions`、`deletions`。
 
-| 组件 | 技术选型 | 说明 |
-| --- | --- | --- |
-| API 框架 | NestJS | 结构清晰，适合模块化和队列/网关整合 |
-| 语言 | TypeScript | 与前端共享类型定义，降低契约漂移 |
-| 队列 | BullMQ | 基于 Redis，支持并发、重试、延迟任务 |
-| 数据库 | PostgreSQL 16 | 主数据存储 |
-| 向量检索 | pgvector | 历史审查相似问题检索 |
-| 对象存储 | MinIO | 存原始 LLM 响应、patch 快照 |
-| 规则引擎 | Python Sidecar + semgrep / ESLint | 规则执行与 Node 主进程解耦 |
-| 可观测性 | OpenTelemetry | Trace、metrics、日志关联 |
+原因：
 
-### 5.2 前端
+- GraphQL 适合一次取 PR 聚合元数据。
+- 文件 patch 在 REST 层拿更直接，返回结构也更适合 diff 解析。
 
-| 组件 | 技术选型 | 说明 |
-| --- | --- | --- |
-| 框架 | React + TypeScript | 便于组件化与状态管理 |
-| 状态管理 | Zustand | 轻量，适合局部增量更新 |
-| 服务端状态 | TanStack Query | 管理 PR 元信息、任务状态缓存 |
-| Diff 展示 | diff2html | 避免自研 diff 渲染 |
-| 实时通道 | socket.io-client | 便于对接 Socket.IO 网关 |
-| 样式 | Tailwind CSS | 快速构建后台类界面 |
+#### 不建议做法
 
-### 5.3 本地开发基础设施
+- 只用 GraphQL 处理所有细节。
+- 每个文件单独再去克隆对比一次 Git。
 
-| 组件 | 用途 |
-| --- | --- |
-| Docker Compose | 本地编排 PostgreSQL、Redis、MinIO、Python Sidecar |
-| pnpm | Node Monorepo 包管理 |
-| turbo 或 nx | 可选，用于管理多包构建 |
+### 5.4 Diff 解析与稳定行锚点
 
----
+#### 必须解决的问题
 
-## 6. 建议目录结构
+LLM 看到的是 diff 文本，不是文件真实行号。如果不做稳定映射，AI 输出的行号会漂。
 
-```text
-ai-pr-review-assistant/
-├── apps/
-│   ├── api/                    # NestJS API
-│   ├── worker/                 # BullMQ Worker
-│   └── web/                    # React 前端
-├── packages/
-│   ├── shared-types/           # 前后端共享类型与 Schema
-│   ├── diff-core/              # patch 解析、行号映射
-│   ├── prompt-builder/         # Prompt 模板与上下文拼装
-│   ├── llm-contracts/          # LLM 输出 Schema
-│   └── config/                 # 环境变量、默认配置
-├── services/
-│   └── rule-engine/            # Python semgrep / eslint sidecar
-├── docs/
-│   └── ai-pr-review-architecture.md
-├── infra/
-│   ├── docker-compose.yml
-│   ├── postgres/
-│   │   └── init.sql
-│   └── minio/
-├── prompts/
-│   ├── common/
-│   ├── ts/
-│   ├── py/
-│   └── go/
-└── .env.example
-```
+#### 设计方案
 
----
+1. 解析 patch 为 `DiffHunk[]`。
+2. 为每一行新增稳定引用，如 `L101+`、`L88-`。
+3. 建立映射：
+   - `diff_line_ref -> new_line_number`
+   - `diff_line_ref -> old_line_number`
+   - `diff_line_ref -> hunk_id`
+4. Prompt 要求模型引用 `diff_line_ref`，而不是裸数字行号。
 
-## 7. 数据模型设计
+#### 结论
 
-### 7.1 核心表
+- Patch 解析可以用轻量库辅助。
+- 行号映射和 `diff_line_ref` 规范必须自研。
 
-系统核心以五张业务表为主，再补充若干支撑表。
+这是整套系统里最不能偷懒的基础设施之一。
 
-### 7.1.1 `pull_requests`
+## 6. Review Triage 与二轮上下文检索
 
-记录 PR 元信息，是所有分析任务的上游实体。
+### 6.1 为什么要先 Triage
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | uuid pk | 主键 |
-| provider | varchar(32) | 平台，当前固定 `github` |
-| owner | varchar(255) | 仓库 owner |
-| repo | varchar(255) | 仓库名 |
-| pr_number | int | PR 编号 |
-| title | text | 标题 |
-| author_login | varchar(255) | 作者 |
-| base_branch | varchar(255) | 基线分支 |
-| head_branch | varchar(255) | 变更分支 |
-| base_sha | varchar(64) | base commit SHA |
-| head_sha | varchar(64) | head commit SHA |
-| changed_files | int | 文件数 |
-| additions | int | 新增行数 |
-| deletions | int | 删除行数 |
-| state | varchar(32) | open / closed / merged |
-| raw_payload | jsonb | 原始 PR 元信息快照 |
-| created_at | timestamptz | 创建时间 |
-| updated_at | timestamptz | 更新时间 |
+如果没有 `Triage`，模型很容易出现两种坏结果：
 
-唯一约束建议：
+- 明明证据不足，却强行给评论。
+- 明明只需补查一个调用方，却把上下文无限放大。
 
-- `(provider, owner, repo, pr_number)`
+所以首轮输出不能是“最终评论”，而应该是 `ReviewTriageDecision`。
 
-### 7.1.2 `review_jobs`
+### 6.2 Triage 决策类型
 
-代表一次完整的 PR 分析任务。
+一期固定为 4 种：
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | uuid pk | 主键 |
-| pull_request_id | uuid fk | 关联 PR |
-| trigger_source | varchar(32) | manual / webhook / retry |
-| status | varchar(32) | pending / running / done / failed / canceled |
-| total_files | int | 总文件数 |
-| finished_files | int | 已完成文件数 |
-| total_slices | int | 总切片数 |
-| finished_slices | int | 已完成切片数 |
-| cache_hit_files | int | 命中缓存文件数 |
-| llm_provider | varchar(64) | 主 provider |
-| llm_model | varchar(128) | 主模型 |
-| total_input_tokens | int | 输入 token |
-| total_output_tokens | int | 输出 token |
-| total_cost_usd | numeric(12,6) | 总成本 |
-| duration_ms | int | 总耗时 |
-| error_message | text | 失败摘要 |
-| started_at | timestamptz | 开始时间 |
-| finished_at | timestamptz | 完成时间 |
-| created_at | timestamptz | 创建时间 |
-| updated_at | timestamptz | 更新时间 |
+- `final_review`：证据足够，可以直接出最终评论或空结果。
+- `need_more_context`：存在高价值问题，但当前证据不够，需要补充仓库上下文。
+- `no_issue`：证据足够且没有发现值得评论的问题。
+- `insufficient_evidence`：证据明显不足，且不值得继续扩上下文。
 
-### 7.1.3 `file_reviews`
+### 6.3 当前契约
 
-每个文件对应一条聚合审查结果。
+当前代码骨架已经落了这批共享契约，位于 `packages/shared-types`：
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | uuid pk | 主键 |
-| review_job_id | uuid fk | 所属任务 |
-| pull_request_id | uuid fk | 所属 PR |
-| file_path | text | 文件路径 |
-| language | varchar(64) | 识别语言 |
-| file_status | varchar(32) | added / modified / removed / renamed |
-| patch_sha256 | varchar(64) | patch 指纹 |
-| is_cached | boolean | 是否缓存命中 |
-| slice_count | int | 切片数量 |
-| ai_comment_count | int | AI 评论数 |
-| rule_comment_count | int | 规则评论数 |
-| highest_severity | varchar(16) | HIGH / MEDIUM / LOW / INFO / NONE |
-| risk_score | int | 0-100 |
-| summary | text | 文件级总结 |
-| duration_ms | int | 文件分析耗时 |
-| created_at | timestamptz | 创建时间 |
-| updated_at | timestamptz | 更新时间 |
-
-唯一约束建议：
-
-- `(review_job_id, file_path)`
-
-### 7.1.4 `review_comments`
-
-记录每条具体问题。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | uuid pk | 主键 |
-| review_job_id | uuid fk | 所属任务 |
-| file_review_id | uuid fk | 所属文件审查 |
-| source | varchar(16) | ai / rule / human |
-| category | varchar(64) | security / bug / perf / style / maintainability |
-| severity | varchar(16) | HIGH / MEDIUM / LOW / INFO |
-| title | varchar(255) | 问题标题 |
-| message | text | 详细描述 |
-| suggestion | text | 修复建议 |
-| file_path | text | 文件路径，便于直接查询 |
-| diff_line_ref | varchar(64) | 例如 `L101+` |
-| line_start | int | 新文件起始行 |
-| line_end | int | 新文件结束行 |
-| old_line_start | int | 旧文件起始行，可为空 |
-| old_line_end | int | 旧文件结束行，可为空 |
-| fingerprint | varchar(64) | 去重指纹 |
-| is_resolved | boolean | 是否已解决 |
-| metadata | jsonb | 规则 ID、模型名等附加信息 |
-| created_at | timestamptz | 创建时间 |
-| updated_at | timestamptz | 更新时间 |
-
-### 7.1.5 `rule_configs`
-
-组织级规则配置。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| id | uuid pk | 主键 |
-| scope_type | varchar(32) | global / org / repo |
-| scope_key | varchar(255) | 作用域标识 |
-| name | varchar(255) | 规则名称 |
-| engine | varchar(32) | semgrep / eslint |
-| priority | int | 优先级 |
-| enabled | boolean | 是否启用 |
-| yaml_content | text | YAML 定义 |
-| version | int | 版本 |
-| created_at | timestamptz | 创建时间 |
-| updated_at | timestamptz | 更新时间 |
-
-### 7.2 支撑表建议
-
-为提高可追踪性，建议增加以下表：
-
-- `review_job_slices`：记录每个文件切片任务
-- `llm_requests`：记录模型请求元数据与成本
-- `github_writebacks`：记录评论回写 GitHub 的结果
-- `code_embeddings`：存历史 `(代码片段, comment)` 向量
-
-### 7.3 PostgreSQL DDL 草案
-
-```sql
-create extension if not exists "uuid-ossp";
-create extension if not exists vector;
-
-create table pull_requests (
-  id uuid primary key default uuid_generate_v4(),
-  provider varchar(32) not null default 'github',
-  owner varchar(255) not null,
-  repo varchar(255) not null,
-  pr_number int not null,
-  title text not null,
-  author_login varchar(255),
-  base_branch varchar(255) not null,
-  head_branch varchar(255) not null,
-  base_sha varchar(64) not null,
-  head_sha varchar(64) not null,
-  changed_files int not null default 0,
-  additions int not null default 0,
-  deletions int not null default 0,
-  state varchar(32) not null default 'open',
-  raw_payload jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (provider, owner, repo, pr_number)
-);
-
-create table review_jobs (
-  id uuid primary key default uuid_generate_v4(),
-  pull_request_id uuid not null references pull_requests(id) on delete cascade,
-  trigger_source varchar(32) not null default 'manual',
-  status varchar(32) not null default 'pending',
-  total_files int not null default 0,
-  finished_files int not null default 0,
-  total_slices int not null default 0,
-  finished_slices int not null default 0,
-  cache_hit_files int not null default 0,
-  llm_provider varchar(64),
-  llm_model varchar(128),
-  total_input_tokens int not null default 0,
-  total_output_tokens int not null default 0,
-  total_cost_usd numeric(12, 6) not null default 0,
-  duration_ms int,
-  error_message text,
-  started_at timestamptz,
-  finished_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table file_reviews (
-  id uuid primary key default uuid_generate_v4(),
-  review_job_id uuid not null references review_jobs(id) on delete cascade,
-  pull_request_id uuid not null references pull_requests(id) on delete cascade,
-  file_path text not null,
-  language varchar(64),
-  file_status varchar(32) not null,
-  patch_sha256 varchar(64) not null,
-  is_cached boolean not null default false,
-  slice_count int not null default 1,
-  ai_comment_count int not null default 0,
-  rule_comment_count int not null default 0,
-  highest_severity varchar(16) not null default 'NONE',
-  risk_score int not null default 0,
-  summary text,
-  duration_ms int,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (review_job_id, file_path)
-);
-
-create table review_comments (
-  id uuid primary key default uuid_generate_v4(),
-  review_job_id uuid not null references review_jobs(id) on delete cascade,
-  file_review_id uuid not null references file_reviews(id) on delete cascade,
-  source varchar(16) not null,
-  category varchar(64) not null,
-  severity varchar(16) not null,
-  title varchar(255) not null,
-  message text not null,
-  suggestion text,
-  file_path text not null,
-  diff_line_ref varchar(64),
-  line_start int,
-  line_end int,
-  old_line_start int,
-  old_line_end int,
-  fingerprint varchar(64),
-  is_resolved boolean not null default false,
-  metadata jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table rule_configs (
-  id uuid primary key default uuid_generate_v4(),
-  scope_type varchar(32) not null,
-  scope_key varchar(255) not null,
-  name varchar(255) not null,
-  engine varchar(32) not null,
-  priority int not null default 100,
-  enabled boolean not null default true,
-  yaml_content text not null,
-  version int not null default 1,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table code_embeddings (
-  id uuid primary key default uuid_generate_v4(),
-  file_path text not null,
-  language varchar(64),
-  code_snippet text not null,
-  comment_summary text not null,
-  source_comment_id uuid references review_comments(id) on delete set null,
-  embedding vector(1536),
-  created_at timestamptz not null default now()
-);
-
-create index idx_pull_requests_lookup on pull_requests(provider, owner, repo, pr_number);
-create index idx_review_jobs_pr on review_jobs(pull_request_id, created_at desc);
-create index idx_file_reviews_job on file_reviews(review_job_id);
-create index idx_review_comments_file_review on review_comments(file_review_id);
-create index idx_review_comments_path_line on review_comments(file_path, line_start);
-create index idx_code_embeddings_vector on code_embeddings using ivfflat (embedding vector_cosine_ops) with (lists = 100);
-```
-
----
-
-## 8. Diff 与行号映射设计
-
-### 8.1 为什么这是系统关键点
-
-PR Review 的真实交付不是“模型说了什么”，而是“模型说的问题能否准确挂到对应代码行”。如果行号错位，前端定位、GitHub 回写、用户信任都会直接失效。
-
-### 8.2 结构化 DiffHunk
-
-建议将每个 patch 解析为如下结构：
-
-```ts
-type DiffLineKind = "context" | "add" | "del";
-
-interface DiffLine {
-  kind: DiffLineKind;
-  rawText: string;
-  oldLineNumber: number | null;
-  newLineNumber: number | null;
-  diffLineRef: string | null; // 例如 L101+ / L87- / C120
-}
-
-interface DiffHunk {
-  oldStart: number;
-  oldLines: number;
-  newStart: number;
-  newLines: number;
-  header: string;
-  lines: DiffLine[];
-}
-```
-
-### 8.3 推荐的行引用格式
-
-Prompt 中不要只给裸行号，应该给稳定引用标识：
-
-- 新增行：`L101+`
-- 删除行：`L87-`
-- 上下文行：`C120`
+- `ReviewTriageDecision`
+- `ContextRequest`
+- `ContextBudget`
+- `ContextFetchResult`
+- `CommentAdmissionDecision`
+- `QualityScoreBreakdown`
 
 示例：
 
-```diff
-@@ -98,6 +101,8 @@
- C100 const result = await service.run();
- L101+ if (!token) {
- L102+   return true;
- C103 }
-```
-
-这样模型返回的不是“不稳定的第 3 行”，而是稳定的 `L101+`。
-
-### 8.4 映射策略
-
-1. patch 解析阶段生成 `diffLineRef -> newLineNumber/oldLineNumber` 字典。
-2. Prompt 要求模型只输出 `diff_line_ref`，禁止输出自然语言“上面那行”。
-3. Parser 将 `diff_line_ref` 反解为真实文件行号。
-4. 如果模型输出多个行标识，按最小/最大行号还原范围。
-5. 若反解失败，该评论标记为 `unmapped`，不直接回写 GitHub。
-
----
-
-## 9. 后端设计
-
-### 9.1 模块划分
-
-建议 NestJS 模块如下：
-
-```text
-apps/api/src/modules/
-├── pull-requests/
-├── review-jobs/
-├── file-reviews/
-├── review-comments/
-├── github/
-├── diff/
-├── rules/
-├── llm/
-├── websocket/
-└── observability/
-```
-
-### 9.2 PR Fetcher 设计
-
-### 输入
-
-- `owner`
-- `repo`
-- `prNumber`
-- GitHub token
-
-### 输出
-
-- PR 基础信息
-- 变更文件列表
-- 每个文件 patch
-- 可选文件 blob 内容
-
-### 获取策略
-
-1. GraphQL v4 获取 PR 基础元信息、作者、base/head、文件列表概览。
-2. REST API 获取每个文件 `patch`。
-3. 对二进制文件、超大文件、无 patch 文件做降级处理：
-   - 标记 `unsupported`
-   - 仅写元信息，不进 LLM 分析
-
-### 9.3 Orchestrator 设计
-
-### 核心职责
-
-- 创建 `review_job`
-- 预估 token
-- 文件切片
-- 任务入队
-- 并发控制
-- 重试策略
-- 进度广播
-- 汇总结束状态
-
-### 切片策略建议
-
-优先级如下：
-
-1. 小文件：整文件分析
-2. 中等文件：按 hunk 分片
-3. 超大文件：按 hunk + 邻域上下文窗口切片
-
-建议阈值：
-
-- `estimated_tokens <= 6_000`：整文件
-- `6_000 < estimated_tokens <= 20_000`：按 hunk
-- `> 20_000`：按 hunk + 关键上下文抽样
-
-### 并发建议
-
-- 单个 PR 同时最多分析 8 个文件
-- 单个 Worker 最大并发 4
-- 单文件失败重试 3 次
-- LLM 超时默认 45 秒
-
-### 9.4 Rule Engine 设计
-
-支持两种来源：
-
-- `semgrep`：安全、通用、跨语言
-- `eslint`：JS/TS 生态深度规则
-
-统一输出：
-
-```ts
-interface RuleViolation {
-  source: "rule";
-  engine: "semgrep" | "eslint";
-  ruleId: string;
-  filePath: string;
-  severity: "HIGH" | "MEDIUM" | "LOW" | "INFO";
-  category: string;
-  title: string;
-  message: string;
-  suggestion?: string;
-  lineStart?: number;
-  lineEnd?: number;
-  metadata?: Record<string, unknown>;
-}
-```
-
-### 9.5 LLM Gateway 设计
-
-### 目标
-
-- 屏蔽多 provider 差异
-- 支持超时回退
-- 统一 token/cost 统计
-- 保留原始响应
-
-### 统一请求结构
-
-```ts
-interface LlmReviewRequest {
-  providerPriority: ("openai" | "anthropic" | "azure")[];
-  model: string;
-  temperature: number;
-  timeoutMs: number;
-  systemPrompt: string;
-  userPrompt: string;
-  responseSchema: object;
-  metadata: {
-    reviewJobId: string;
-    filePath: string;
-    sliceId?: string;
-  };
-}
-```
-
-### 回退策略
-
-1. 按优先级尝试主 provider
-2. 超时、429、5xx 时自动切备用 provider
-3. 记录 `fallback_count` 和最终 provider
-
-### 9.6 Response Parser 设计
-
-职责：
-
-- JSON Schema 校验
-- 结构标准化
-- `diff_line_ref` 反解
-- 去重与合并
-- 无效评论过滤
-
-去重建议：
-
-- `fingerprint = sha256(file_path + diff_line_ref + category + normalized_title)`
-
----
-
-## 10. LLM Prompt 与 Structured Output 契约
-
-### 10.1 Prompt 设计原则
-
-- 只让模型审查“变更部分”，不要泛化到整个仓库
-- 强制基于 diff 给出证据
-- 强制输出结构化 JSON
-- 控制评论数量，避免噪声
-- 优先高价值问题：正确性、安全、性能、并发、可维护性
-
-### 10.2 System Prompt 要点
-
-建议包含：
-
-- 你的身份是资深代码审查工程师
-- 仅根据本次 diff 和提供上下文判断
-- 只输出真实问题，不要为评论而评论
-- 优先发现 bug、安全、性能、并发、错误处理缺陷
-- 风格类问题仅在明显影响可维护性时输出
-- 每条评论必须引用 `diff_line_ref`
-- 必须返回 JSON，符合给定 schema
-
-### 10.3 Structured Output JSON Schema
-
 ```json
 {
-  "type": "object",
-  "required": ["summary", "comments"],
-  "properties": {
-    "summary": {
-      "type": "string",
-      "description": "该文件或切片的简短审查总结"
-    },
-    "comments": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "diff_line_ref",
-          "severity",
-          "category",
-          "title",
-          "message"
-        ],
-        "properties": {
-          "diff_line_ref": {
-            "type": "string",
-            "description": "必须使用类似 L101+ 的稳定行引用"
-          },
-          "line_refs": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "severity": {
-            "type": "string",
-            "enum": ["HIGH", "MEDIUM", "LOW", "INFO"]
-          },
-          "category": {
-            "type": "string",
-            "enum": ["security", "bug", "performance", "concurrency", "style", "maintainability", "testing"]
-          },
-          "title": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "suggestion": {
-            "type": "string"
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
-        }
-      }
-    }
+  "decision": "need_more_context",
+  "confidence": 0.61,
+  "riskLevel": "high",
+  "rationale": "返回值语义变化可能影响调用方分支逻辑",
+  "evidenceCoverage": {
+    "modifiedSymbol": true,
+    "localContext": true,
+    "callers": false,
+    "callees": false,
+    "tests": false,
+    "schema": false
+  },
+  "contextRequest": {
+    "reason": "需要确认调用方是否仍按旧语义消费返回值",
+    "symbols": ["AuthService.refreshToken"],
+    "callersOf": ["AuthService.refreshToken"],
+    "tests": ["AuthService.refreshToken"]
   }
 }
 ```
 
-### 10.4 LLM 结果标准化类型
+### 6.4 什么时候允许进入二轮检索
 
-```ts
-interface AiReviewComment {
-  source: "ai";
-  diffLineRef: string;
-  lineRefs?: string[];
-  severity: "HIGH" | "MEDIUM" | "LOW" | "INFO";
-  category: "security" | "bug" | "performance" | "concurrency" | "style" | "maintainability" | "testing";
-  title: string;
-  message: string;
-  suggestion?: string;
-  confidence?: number;
-}
+不是所有 PR 都要走二轮。
+
+推荐触发条件：
+
+- 涉及 `auth / payment / permission / transaction / cache / retry / schema`。
+- 首轮发现参数、返回值、异常语义发生变化。
+- 首轮发现高风险规则命中，但缺少调用链或测试证据。
+- 首轮已经怀疑存在真实 bug，但影响范围未知。
+- 首轮评论置信度不足，但潜在影响较大。
+
+### 6.5 Context Request 能请求什么
+
+一期不开放任意工具调用，只开放受控检索动作：
+
+- `find_symbol_definition`
+- `find_callers`
+- `find_callees`
+- `read_file_snippet`
+- `find_related_tests`
+- `find_schema_or_migration`
+- `read_config_or_feature_flag`
+
+这也是当前 `packages/review-core` 中 `createContextFetchPlan` 的逻辑基础。
+
+### 6.6 上下文预算
+
+二轮检索必须有预算，不然系统会无限膨胀：
+
+- `maxRounds`
+- `maxToolCalls`
+- `maxExtraFiles`
+- `maxCallDepth`
+- `maxExtraTokens`
+
+预算超限时，系统应当返回：
+
+- 不继续扩上下文
+- 明确记录原因
+- 将结果标记为 `reject_due_to_budget` 或 `insufficient_evidence`
+
+### 6.7 二轮审查状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> FirstPass
+    FirstPass --> FinalReview: final_review
+    FirstPass --> NoIssue: no_issue
+    FirstPass --> InsufficientEvidence: insufficient_evidence
+    FirstPass --> FetchContext: need_more_context
+    FetchContext --> SecondPass
+    SecondPass --> CandidateComments
+    CandidateComments --> AdmissionGate
+    AdmissionGate --> AcceptedComments
+    AdmissionGate --> SuppressedComments
+    AcceptedComments --> FinalOutput
+    SuppressedComments --> FinalOutput
+    FinalReview --> FinalOutput
+    NoIssue --> FinalOutput
+    InsufficientEvidence --> FinalOutput
 ```
 
----
+## 7. Comment Admission Gate 与 Quality Scoring
 
-## 11. 缓存与检索增强设计
+### 7.1 为什么这一步比“会检索”更重要
 
-### 11.1 缓存策略
+真正决定系统是否有价值的，不是它能不能多查几个文件，而是它最后发出来的评论是否：
 
-缓存键建议：
+- 有代码锚点
+- 有证据链
+- 说明了故障条件和影响
+- 对开发者可执行
+- 不是低信号废话
 
-```text
-provider:owner:repo:pr_number:head_sha:file_path:patch_sha256:rule_config_version:model
-```
+### 7.2 默认准入规则
 
-命中条件：
+一期准入门禁建议如下：
 
-- `head_sha` 未变化
-- 文件 `patch_sha256` 未变化
-- 规则配置版本未变化
-- 模型版本未变化
+- 没有 `diff_line_ref`，不准发。
+- 没有 `evidence_refs`，不准发。
+- 没说明“在什么条件下会出问题”，不准发。
+- 没有行动建议且不具备明确风险描述，默认压制。
+- 分数低于阈值，压制。
 
-命中后行为：
+### 7.3 质量评分维度
 
-- 直接复用 `file_reviews` 与 `review_comments`
-- 标记 `is_cached = true`
-- 不重复调用 LLM
+当前 `packages/review-core` 已经实现了基础 `QualityScoreBreakdown`，后续应按这几个维度稳定化：
 
-### 11.2 pgvector 增强
+- `evidenceStrength`
+- `impactClarity`
+- `actionability`
+- `specificity`
+- `novelty`
+- `noisePenalty`
 
-存储对象：
+默认目标：
 
-- 代码片段
-- 历史问题摘要
-- 历史建议
+- 高风险问题应高召回。
+- 风格类、低信号、模板化问题应强压制。
 
-检索时机：
+### 7.4 典型低信号模式
 
-- 文件进入 LLM 分析前
+以下内容默认应该降分：
 
-检索结果：
+- “可以考虑优化”
+- “建议增强可读性”
+- “潜在风险”
+- “最好补一下日志”
+- “建议增加校验”
 
-- Top 3 相似历史问题
+这类表达不一定错，但通常对 PR 作者没有足够行动价值。
 
-注入方式：
+## 8. 模块设计与实现边界
 
-- 作为 few-shot 附加上下文
-- 明确标记“仅作历史参考，不要机械复制”
+### 8.1 当前代码骨架状态
 
----
+| 模块         | 路径                    | 状态     | 说明                                            |
+| ------------ | ----------------------- | -------- | ----------------------------------------------- |
+| API          | `apps/api`              | 已初始化 | NestJS 应用，已接入调试端点                     |
+| Worker       | `apps/worker`           | 已初始化 | 已有最小 review pipeline                        |
+| Web          | `apps/web`              | 已初始化 | React + Vite 骨架                               |
+| Shared Types | `packages/shared-types` | 已初始化 | Zod Schema 与跨进程契约                         |
+| Review Core  | `packages/review-core`  | 已初始化 | Triage、Context Plan、Admission、Quality 纯逻辑 |
+| Rule Engine  | `services/rule-engine`  | 已初始化 | Python sidecar 骨架                             |
 
-## 12. API 契约设计
+### 8.2 计划模块边界
 
-下述接口默认前缀为 `/api`。
+| 模块                         | 直接用现成方案                           | 需要自己写                         |
+| ---------------------------- | ---------------------------------------- | ---------------------------------- |
+| `apps/api`                   | NestJS 控制器、DI、模块、HTTP、WebSocket | 业务聚合、任务状态、权限和错误语义 |
+| `apps/worker`                | BullMQ Worker、重试、并发控制            | 审查状态机、上下文预算、结果聚合   |
+| `packages/shared-types`      | Zod                                      | 业务 Schema 定义                   |
+| `packages/review-core`       | 无                                       | 这是核心自研逻辑                   |
+| `packages/repo-intelligence` | Tree-sitter / ts-morph                   | 扫描编排、索引格式、摘要策略       |
+| `packages/diff-core`         | 轻量 diff parser                         | 稳定行锚点、hunk 映射、文件切片    |
+| `services/rule-engine`       | Semgrep、ESLint                          | 规则结果标准化、仓库级规则加载     |
 
-### 12.1 创建审查任务
+### 8.3 哪些不要自己造轮子
 
-### 请求
+明确不要自研：
 
-`POST /api/review-jobs`
-
-```json
-{
-  "provider": "github",
-  "owner": "octocat",
-  "repo": "hello-world",
-  "prNumber": 42,
-  "options": {
-    "forceRefresh": false,
-    "enableGitHubWriteback": false,
-    "providerPriority": ["openai", "anthropic"],
-    "model": "gpt-4.1"
-  }
-}
-```
-
-### 响应
-
-```json
-{
-  "jobId": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "status": "pending"
-}
-```
-
-### 12.2 查询任务详情
-
-### 请求
-
-`GET /api/review-jobs/:jobId`
-
-### 响应
-
-```json
-{
-  "id": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "status": "running",
-  "totalFiles": 12,
-  "finishedFiles": 7,
-  "totalSlices": 18,
-  "finishedSlices": 11,
-  "totalCostUsd": 0.42,
-  "durationMs": 15432
-}
-```
-
-### 12.3 查询 PR 审查结果
-
-### 请求
-
-`GET /api/review-jobs/:jobId/results`
-
-### 响应
-
-```json
-{
-  "prMeta": {
-    "owner": "octocat",
-    "repo": "hello-world",
-    "prNumber": 42,
-    "title": "fix: handle token refresh race",
-    "baseBranch": "main",
-    "headBranch": "fix/token-race"
-  },
-  "files": [
-    {
-      "fileReviewId": "1bdf6d34-f7f1-4bc8-b0cc-cff2ca9b4963",
-      "filePath": "src/auth/token.ts",
-      "language": "ts",
-      "highestSeverity": "HIGH",
-      "riskScore": 82,
-      "summary": "存在 token 缺失分支直接返回成功的问题。",
-      "aiCommentCount": 1,
-      "ruleCommentCount": 1,
-      "comments": [
-        {
-          "id": "0a4c7414-2fd9-4d34-a027-29a0b4f51d60",
-          "source": "ai",
-          "category": "bug",
-          "severity": "HIGH",
-          "title": "缺少 token 时错误返回成功",
-          "message": "该分支在 token 为空时直接返回 true，会掩盖真实认证失败。",
-          "suggestion": "改为返回失败结果或抛出明确异常。",
-          "diffLineRef": "L101+",
-          "lineStart": 101,
-          "lineEnd": 102
-        }
-      ]
-    }
-  ]
-}
-```
-
-### 12.4 获取文件 diff 详情
-
-### 请求
-
-`GET /api/file-reviews/:fileReviewId/diff`
-
-### 响应
-
-```json
-{
-  "filePath": "src/auth/token.ts",
-  "patch": "@@ -98,6 +101,8 @@\n C100 const result = await service.run();\n L101+ if (!token) {\n L102+   return true;\n C103 }\n",
-  "hunks": [
-    {
-      "header": "@@ -98,6 +101,8 @@",
-      "oldStart": 98,
-      "newStart": 101,
-      "lines": [
-        {
-          "kind": "add",
-          "rawText": "if (!token) {",
-          "diffLineRef": "L101+",
-          "newLineNumber": 101,
-          "oldLineNumber": null
-        }
-      ]
-    }
-  ]
-}
-```
-
-### 12.5 回写 GitHub 评论
-
-### 请求
-
-`POST /api/review-jobs/:jobId/publish`
-
-```json
-{
-  "commentIds": [
-    "0a4c7414-2fd9-4d34-a027-29a0b4f51d60"
-  ]
-}
-```
-
-### 响应
-
-```json
-{
-  "publishedCount": 1,
-  "failedCount": 0
-}
-```
-
----
-
-## 13. WebSocket 契约
-
-命名建议使用 Socket.IO 事件。
-
-### 13.1 连接方式
-
-- namespace: `/review-jobs`
-- room: `job:{jobId}`
-
-### 13.2 事件定义
-
-### `review_job_started`
-
-```json
-{
-  "jobId": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "status": "running",
-  "totalFiles": 12,
-  "totalSlices": 18
-}
-```
-
-### `file_review_complete`
-
-```json
-{
-  "jobId": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "fileReview": {
-    "id": "1bdf6d34-f7f1-4bc8-b0cc-cff2ca9b4963",
-    "filePath": "src/auth/token.ts",
-    "highestSeverity": "HIGH",
-    "riskScore": 82,
-    "summary": "存在 token 缺失分支直接返回成功的问题。",
-    "comments": []
-  },
-  "progress": {
-    "finishedFiles": 7,
-    "totalFiles": 12
-  }
-}
-```
-
-### `file_review_failed`
-
-```json
-{
-  "jobId": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "filePath": "src/legacy/big-file.ts",
-  "errorMessage": "LLM timeout after 45000ms"
-}
-```
-
-### `review_job_done`
-
-```json
-{
-  "jobId": "c2d23d7e-6f01-4a9f-b57d-5e820f8f93d0",
-  "status": "done",
-  "finishedFiles": 12,
-  "totalFiles": 12,
-  "totalCostUsd": 0.42,
-  "durationMs": 22893
-}
-```
-
----
-
-## 14. 队列契约设计
-
-### 14.1 BullMQ Job Payload
-
-```ts
-interface ReviewSliceJobPayload {
-  reviewJobId: string;
-  pullRequestId: string;
-  filePath: string;
-  language: string;
-  patch: string;
-  patchSha256: string;
-  sliceId: string;
-  sliceIndex: number;
-  totalSlicesForFile: number;
-  diffHunks: DiffHunk[];
-  fileContext?: string;
-  ruleConfigVersion: number;
-  llm: {
-    providerPriority: ("openai" | "anthropic" | "azure")[];
-    model: string;
-    timeoutMs: number;
-  };
-}
-```
-
-### 14.2 BullMQ 配置建议
-
-```ts
-{
-  attempts: 3,
-  backoff: {
-    type: "exponential",
-    delay: 3000
-  },
-  removeOnComplete: 1000,
-  removeOnFail: 1000
-}
-```
-
----
-
-## 15. 前端设计
-
-### 15.1 页面结构
-
-建议一期包含三个主区域：
-
-1. 顶部任务状态区
-2. 左侧文件审查列表
-3. 右侧 Diff Viewer + 评论联动区
-
-### 15.2 Zustand Store 设计
-
-```ts
-interface ReviewStore {
-  prMeta: {
-    owner: string;
-    repo: string;
-    prNumber: number;
-    title: string;
-    baseBranch: string;
-    headBranch: string;
-  } | null;
-  fileReviews: FileReviewViewModel[];
-  activeFilePath: string | null;
-  activeCommentId: string | null;
-  streamingStatus: {
-    jobId: string | null;
-    status: "idle" | "running" | "done" | "failed";
-    totalFiles: number;
-    finishedFiles: number;
-  };
-  setActiveFilePath: (filePath: string) => void;
-  setActiveCommentId: (commentId: string | null) => void;
-  patchFileReview: (fileReview: FileReviewViewModel) => void;
-}
-```
-
-### 15.3 前端交互流程
-
-### 文件点击联动
-
-1. 点击左侧文件条目
-2. 设置 `activeFilePath`
-3. 加载该文件 diff
-4. Diff Viewer 渲染
-5. 默认滚到该文件第一条评论
-
-### 评论点击联动
-
-1. 点击评论卡片
-2. 设置 `activeCommentId`
-3. 根据 `lineStart` 定位到 diff 行 DOM
-4. `scrollIntoView`
-5. 高亮对应行和评论卡片
-
-### 反向联动
-
-1. 在 Diff Viewer 中点击某条浮层评论
-2. 反向更新左侧选中项
-3. 左侧列表滚动到对应文件或评论
-
-### 15.4 Diff Viewer 实现建议
-
-### 选型
-
-使用 `diff2html` 渲染，不自行实现 diff 布局。
-
-### 增强要求
-
-- 渲染后给每行追加 `data-line` 与 `data-diff-line-ref`
-- 建立 `commentId -> DOM node` 索引
-- 高亮样式独立于 diff2html 默认主题
-
-### DOM 定位示例
-
-```ts
-const target = document.querySelector(`[data-line="101"]`);
-target?.scrollIntoView({ block: "center", behavior: "smooth" });
-```
-
-### 15.5 流式进度 UI
-
-建议交互：
-
-- 顶部展示整体进度条：`finishedFiles / totalFiles`
-- 文件列表中未完成项显示骨架占位
-- 文件完成时逐个替换为真实审查结果
-- 单文件失败时展示失败状态和重试按钮
-
----
-
-## 16. GitHub 回写设计
-
-### 16.1 写回模式
-
-一期建议只支持“用户手动确认后回写”，不默认自动推送评论。
-
-### 16.2 写回前置校验
-
-- 必须具备 `line_start`
-- 必须具备 `file_path`
-- 评论未被标记为 `unmapped`
-- PR head SHA 未变化
-
-### 16.3 回写 API 选择
-
-使用 GitHub Pull Request Review Comments API。
-
-需要映射：
-
-- `path`
-- `line`
-- `side`
-- `body`
-
-如果评论范围跨多行，考虑使用 `start_line` 和 `line`。
-
----
-
-## 17. 本地 Docker Compose 方案
-
-### 17.1 服务清单
-
-本地只需要编排基础依赖，不需要容器化前后端开发服务器也能工作。
-
-建议服务：
-
-- `postgres`
-- `redis`
-- `minio`
-- `rule-engine`
-
-前端与 NestJS 可在宿主机本地启动，便于热更新。
-
-### 17.2 端口规划
-
-| 服务 | 端口 |
-| --- | --- |
-| PostgreSQL | 5432 |
-| Redis | 6379 |
-| MinIO API | 9000 |
-| MinIO Console | 9001 |
-| Rule Engine | 8001 |
-
-### 17.3 `docker-compose.yml` 示例
-
-```yaml
-version: "3.9"
-
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: ai-pr-review-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ai_pr_review
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-
-  redis:
-    image: redis:7-alpine
-    container_name: ai-pr-review-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  minio:
-    image: minio/minio:latest
-    container_name: ai-pr-review-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-
-  rule-engine:
-    build:
-      context: ./services/rule-engine
-    container_name: ai-pr-review-rule-engine
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./services/rule-engine:/app
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-```
-
-### 17.4 本地启动顺序
-
-1. `docker compose -f infra/docker-compose.yml up -d`
-2. 初始化 `.env`
-3. 启动 `apps/api`
-4. 启动 `apps/worker`
-5. 启动 `apps/web`
-
----
-
-## 18. 环境变量建议
-
-```bash
-# API
-PORT=3001
-NODE_ENV=development
-
-# GitHub
-GITHUB_TOKEN=
-
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_pr_review
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# MinIO
-S3_ENDPOINT=http://localhost:9000
-S3_ACCESS_KEY=minioadmin
-S3_SECRET_KEY=minioadmin
-S3_BUCKET=llm-raw-responses
-S3_FORCE_PATH_STYLE=true
-
-# Rule Engine
-RULE_ENGINE_BASE_URL=http://localhost:8001
-
-# LLM
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-AZURE_OPENAI_API_KEY=
-DEFAULT_LLM_PROVIDER=openai
-DEFAULT_LLM_MODEL=gpt-4.1
-
-# WebSocket
-WS_NAMESPACE=/review-jobs
-```
-
----
-
-## 19. 失败场景与降级策略
-
-| 场景 | 风险 | 降级方案 |
-| --- | --- | --- |
-| GitHub patch 缺失 | 无法做精确行映射 | 文件标记 unsupported，仅展示元信息 |
-| LLM 超时 | 单文件分析失败 | 自动重试 3 次，最终标记失败 |
-| Rule Engine 不可用 | 缺少静态规则结果 | 仅跑 AI 分析，并记录 degraded 标记 |
-| 行号反解失败 | 评论无法挂载到代码 | 标记 `unmapped`，不支持回写 |
-| 大文件 token 超限 | 成本高或模型拒绝 | 按 hunk 切片并截断上下文 |
-| 模型输出不符合 JSON Schema | 无法结构化入库 | 触发一次修复性重试，仍失败则标记解析失败 |
-
----
-
-## 20. 开发里程碑建议
-
-### 20.1 M1：骨架期
-
-交付：
-
-- Monorepo 初始化
-- NestJS / React / Worker 项目骨架
-- PostgreSQL / Redis / MinIO 本地环境
-- 核心表建表
-
-### 20.2 M2：PR 拉取与 diff 解析
-
-交付：
-
-- GitHub PR 拉取
-- patch 获取
-- `DiffHunk` 解析
-- 行号映射
-
-### 20.3 M3：分析链路打通
-
-交付：
-
-- BullMQ 队列
-- Rule Engine 接入
-- LLM Gateway 接入
-- 结构化解析入库
-
-### 20.4 M4：前端联动
-
-交付：
-
-- 文件列表
+- HTTP 服务框架
+- 队列系统
+- 向量数据库
+- 对象存储
 - Diff Viewer
-- 评论联动
-- WebSocket 实时更新
+- 静态规则执行器
+- Schema 校验库
 
-### 20.5 M5：增强能力
+明确必须自研：
 
-交付：
+- 仓库语义地图格式
+- Diff 行锚点规范
+- 上下文请求与预算系统
+- 二轮审查编排
+- 评论准入门禁
+- 质量评分策略
+- 结果聚合与去重
 
-- 缓存命中
-- pgvector 检索增强
-- GitHub 评论回写
-- OpenTelemetry 链路追踪
+## 9. 技术选型与推荐方案
 
----
+### 9.1 后端与基础设施
 
-## 21. 一期建议的最小闭环
+| 领域            | 候选                      | 结论            | 原因                                   |
+| --------------- | ------------------------- | --------------- | -------------------------------------- |
+| API 框架        | NestJS / Fastify 原生     | `NestJS`        | 模块化、DI、队列、WebSocket 集成清晰   |
+| 队列            | BullMQ / RabbitMQ / Kafka | `BullMQ`        | 本地开发简单，足够支撑文件级并发与重试 |
+| 主数据库        | PostgreSQL / MySQL        | `PostgreSQL`    | JSONB、关系查询、后续向量扩展方便      |
+| 向量检索        | pgvector / 独立向量库     | `pgvector`      | 一期不需要独立向量基础设施             |
+| 缓存 / 队列存储 | Redis                     | `Redis`         | BullMQ 依赖，状态广播也可复用          |
+| 对象存储        | MinIO                     | `MinIO`         | 本地兼容 S3，适合存原始响应和快照      |
+| 可观测性        | OpenTelemetry             | `OpenTelemetry` | 统一 trace 和后续接 APM                |
 
-如果要尽快做出可用版本，一期最小闭环建议只做以下能力：
+### 9.2 代码理解与检索
 
-1. 输入 GitHub PR 链接或 `owner/repo/prNumber`
-2. 拉取 PR 和 patch
-3. 整文件或按 hunk 做 AI Review
-4. 结构化输出评论
-5. 前端按文件展示审查结果
-6. 点击评论可跳转到 diff 对应行
-7. 本地 `Docker Compose` 拉起依赖
+| 领域           | 候选          | 结论     | 原因                                       |
+| -------------- | ------------- | -------- | ------------------------------------------ |
+| TS/JS 语义提取 | `ts-morph`    | 优先     | 直接封装 TypeScript Compiler API，适合一期 |
+| 多语言基础解析 | `tree-sitter` | 必备     | 可做统一 AST 底座                          |
+| 结构化搜索     | `ast-grep`    | 可选增强 | 适合补充符号级/模式级搜索                  |
+| 规则引擎       | `Semgrep`     | 必备     | 多语言、规则 YAML、适合快速上线            |
+| TS 规则补充    | `ESLint API`  | 可选     | 前端/Node 仓库可补语言生态规则             |
 
-一期可以暂缓的内容：
+### 9.3 前端
 
-- pgvector 历史增强
-- GitHub 评论回写
-- 多 provider 自动回退
-- 复杂规则平台化管理
+| 领域      | 结论                     | 原因                         |
+| --------- | ------------------------ | ---------------------------- |
+| UI 框架   | React + TypeScript       | 和共享契约、状态管理配合自然 |
+| 构建工具  | Vite                     | 本地开发快                   |
+| 状态管理  | Zustand + TanStack Query | 本地状态和服务端状态职责分明 |
+| Diff 渲染 | diff2html                | 没必要自研 diff 视图         |
+| 实时通道  | Socket.IO Client         | 和 Nest 网关结合方便         |
 
----
+## 10. 数据模型设计
 
-## 22. 关键风险与实现建议
+新的数据模型要分成两类：
 
-### 22.1 高风险点
+- 仓库级 Intelligence 表
+- PR 审查级 Runtime 表
 
-### 行号映射
+### 10.1 仓库级表
 
-这是第一优先级风险，必须先做稳定 `diff_line_ref`，再接 LLM。
+#### `repositories`
 
-### 大文件与成本控制
+记录接入的 GitHub 仓库。
 
-如果不做切片和缓存，LLM 成本会快速失控。
+| 字段           | 类型         | 说明              |
+| -------------- | ------------ | ----------------- |
+| id             | uuid pk      | 主键              |
+| provider       | varchar(32)  | 当前固定 `github` |
+| owner          | varchar(255) | 仓库 owner        |
+| repo           | varchar(255) | 仓库名            |
+| default_branch | varchar(255) | 默认分支          |
+| clone_url      | text         | clone 地址        |
+| is_active      | boolean      | 是否启用          |
+| created_at     | timestamptz  | 创建时间          |
+| updated_at     | timestamptz  | 更新时间          |
 
-### 模型输出稳定性
+#### `repository_scans`
 
-如果不用 structured output，后处理会非常脆弱。
+记录每次仓库扫描任务。
 
-### 22.2 建议的实现顺序
+| 字段              | 类型        | 说明                                      |
+| ----------------- | ----------- | ----------------------------------------- |
+| id                | uuid pk     | 主键                                      |
+| repository_id     | uuid fk     | 所属仓库                                  |
+| scan_type         | varchar(32) | `full` / `incremental`                    |
+| target_sha        | varchar(64) | 扫描目标 commit                           |
+| status            | varchar(32) | `pending` / `running` / `done` / `failed` |
+| language_summary  | jsonb       | 语言统计                                  |
+| framework_summary | jsonb       | 框架识别结果                              |
+| started_at        | timestamptz | 开始时间                                  |
+| finished_at       | timestamptz | 完成时间                                  |
 
-建议按以下顺序开发，而不是并行铺开：
+#### `repository_files`
 
-1. 数据库表结构
-2. GitHub 拉取与 patch 解析
-3. 行号映射
-4. 结构化 LLM 输出
-5. 文件级结果入库
-6. 前端 Diff Viewer 联动
-7. WebSocket 增量刷新
-8. 规则引擎与缓存增强
+记录文件元信息与职责摘要。
 
----
+| 字段          | 类型         | 说明                                            |
+| ------------- | ------------ | ----------------------------------------------- |
+| id            | uuid pk      | 主键                                            |
+| repository_id | uuid fk      | 所属仓库                                        |
+| scan_id       | uuid fk      | 所属扫描                                        |
+| file_path     | text         | 文件路径                                        |
+| language      | varchar(64)  | 语言                                            |
+| kind          | varchar(32)  | `source` / `test` / `doc` / `config` / `schema` |
+| module_name   | varchar(255) | 所属模块                                        |
+| summary       | text         | 文件职责摘要                                    |
+| risk_tags     | jsonb        | 风险标签数组                                    |
+| checksum      | varchar(64)  | 文件摘要                                        |
 
-## 23. 结论
+#### `symbols`
 
-这个方案的核心不是“接一个大模型”，而是建立一条可追踪、可映射、可增量反馈的数据流：
+核心 symbol 索引。
 
-- GitHub PR -> 结构化 Diff
-- 结构化 Diff -> 并发分析任务
-- 分析任务 -> 结构化评论
-- 结构化评论 -> 行号映射
-- 行号映射 -> 前端联动与 GitHub 回写
+| 字段           | 类型         | 说明                                               |
+| -------------- | ------------ | -------------------------------------------------- |
+| id             | uuid pk      | 主键                                               |
+| repository_id  | uuid fk      | 所属仓库                                           |
+| scan_id        | uuid fk      | 所属扫描                                           |
+| file_id        | uuid fk      | 所属文件                                           |
+| symbol_name    | text         | 名称                                               |
+| qualified_name | text         | 全限定名                                           |
+| kind           | varchar(32)  | `function` / `class` / `method` / `type` / `route` |
+| start_line     | int          | 起始行                                             |
+| end_line       | int          | 结束行                                             |
+| signature      | text         | 签名摘要                                           |
+| module_name    | varchar(255) | 所属模块                                           |
+| risk_tags      | jsonb        | 风险标签                                           |
 
-只要把 `diff_line_ref`、任务编排、结构化输出这三件事先做稳，这个 AI PR Review 助手就能具备真正可用的产品雏形。
+#### `symbol_edges`
+
+记录符号关系图。
+
+| 字段           | 类型        | 说明                                                     |
+| -------------- | ----------- | -------------------------------------------------------- |
+| id             | uuid pk     | 主键                                                     |
+| repository_id  | uuid fk     | 所属仓库                                                 |
+| scan_id        | uuid fk     | 所属扫描                                                 |
+| from_symbol_id | uuid fk     | 起点                                                     |
+| to_symbol_id   | uuid fk     | 终点                                                     |
+| edge_type      | varchar(32) | `imports` / `calls` / `tests` / `defines` / `references` |
+
+#### `semantic_documents`
+
+向量语义语料。
+
+| 字段          | 类型        | 说明                                            |
+| ------------- | ----------- | ----------------------------------------------- |
+| id            | uuid pk     | 主键                                            |
+| repository_id | uuid fk     | 所属仓库                                        |
+| scan_id       | uuid fk     | 所属扫描                                        |
+| source_path   | text        | 来源文件                                        |
+| document_type | varchar(32) | `readme` / `doc` / `module_summary` / `api_doc` |
+| chunk_index   | int         | 分块编号                                        |
+| content       | text        | chunk 内容                                      |
+| metadata      | jsonb       | 模块、标签、标题等                              |
+| embedding     | vector      | 向量                                            |
+
+### 10.2 PR 审查级表
+
+#### `pull_requests`
+
+PR 元信息。
+
+#### `review_jobs`
+
+一次完整审查任务。
+
+#### `file_reviews`
+
+文件聚合级结果。
+
+#### `review_comments`
+
+最终评论。
+
+#### `llm_call_logs`
+
+模型调用日志与原始响应元信息。
+
+#### `context_fetch_logs`
+
+二轮检索记录。
+
+这些表的一期字段设计可沿用当前旧文档中的基础字段，但必须额外补上：
+
+- `triage_decision`
+- `context_round`
+- `evidence_refs`
+- `quality_score`
+- `admission_reasons`
+- `duplicate_fingerprint`
+
+## 11. 接口契约设计
+
+### 11.1 对外 API
+
+#### 仓库接入
+
+- `POST /api/repositories/connect`
+- `POST /api/repositories/:id/scan`
+- `GET /api/repositories/:id`
+- `GET /api/repositories/:id/semantic-map`
+
+#### PR 审查
+
+- `POST /api/review-jobs`
+- `GET /api/review-jobs/:id`
+- `GET /api/review-jobs/:id/files`
+- `GET /api/review-jobs/:id/comments`
+- `POST /api/review-jobs/:id/writeback`
+
+### 11.2 WebSocket 事件
+
+- `review_job_started`
+- `file_review_started`
+- `file_review_complete`
+- `review_job_progress`
+- `review_job_done`
+- `review_job_failed`
+
+### 11.3 当前已实现的调试接口
+
+当前 `apps/api` 已存在一组调试端点，适合先验证质量门禁逻辑：
+
+- `POST /review-tools/context-plan`
+- `POST /review-tools/triage`
+- `POST /review-tools/quality-score`
+- `POST /review-tools/comment-admission`
+
+这组接口不是最终产品 API，但可以作为 `review-core` 的验收入口。
+
+## 12. 前端设计
+
+### 12.1 页面分区
+
+一期建议 3 个核心页面：
+
+1. 仓库接入页
+2. PR 审查工作台
+3. 仓库语义地图页
+
+### 12.2 PR 审查工作台布局
+
+- 左侧：文件列表与风险等级
+- 中间：Diff Viewer
+- 右侧：评论面板、PR Summary、Merge Suggestion
+- 顶部：整体进度条、轮次、缓存命中、成本和耗时
+
+### 12.3 核心交互
+
+- 点击文件，切换 active diff
+- 点击评论，滚动到对应 `diff_line_ref`
+- 点击“为什么判定为问题”，展开 evidence chain
+- 点击“查看补充上下文”，展开调用链 / 定义 / 测试 / 文档摘要
+
+### 12.4 状态模型
+
+建议前端 store 保持 4 组核心状态：
+
+- `repositoryState`
+- `reviewJobState`
+- `diffViewerState`
+- `commentPanelState`
+
+其中：
+
+- `Zustand` 管理本地交互状态
+- `TanStack Query` 管理服务端数据缓存
+
+## 13. 本地开发与 Docker Compose
+
+### 13.1 当前本地基础设施
+
+当前 `infra/docker-compose.yml` 已确定如下服务：
+
+- `postgres`：`pgvector/pgvector:pg16`
+- `redis`：`redis:7-alpine`
+- `minio`：`minio/minio`
+- `rule-engine`：`python:3.14-slim`
+
+### 13.2 建议的本地运行职责
+
+| 服务        | 用途                           |
+| ----------- | ------------------------------ |
+| PostgreSQL  | 主数据存储 + 向量存储          |
+| Redis       | BullMQ 队列与状态              |
+| MinIO       | 原始响应、patch 快照、审计归档 |
+| Rule Engine | Semgrep / ESLint 的包装运行层  |
+
+### 13.3 为什么本地不再加更多服务
+
+一期不要引入：
+
+- Kafka
+- Elasticsearch
+- Neo4j
+- 独立向量数据库
+- 分布式任务系统
+
+理由不是这些技术不好，而是当前目标是先做出“准、稳、可验证”的 PR Review 核心链路。
+
+## 14. 实现路线图
+
+### 14.1 Phase 1：Repository Intelligence 打底
+
+交付物：
+
+- 仓库接入 API
+- 默认分支扫描任务
+- `repository_files`、`symbols`、`symbol_edges`、`semantic_documents`
+- TS/JS 深度解析 + 多语言兜底解析
+- 仓库语义地图查询接口
+
+验收标准：
+
+- 能接入一个 GitHub 仓库并完成扫描。
+- 能查某个 symbol 的定义、调用方、模块和测试。
+- 能检索 README / docs / module summary。
+
+### 14.2 Phase 2：PR Review 主链路
+
+交付物：
+
+- PR 拉取
+- Diff 解析与 `diff_line_ref`
+- 首轮规则审查
+- 首轮 AI 审查
+- `TriageDecision`
+- `ContextRequest`
+- 二轮检索与二轮审查
+
+验收标准：
+
+- 给定一个 PR，系统能完成首轮和按需二轮审查。
+- 上下文请求受预算控制。
+- 能输出结构化候选评论。
+
+### 14.3 Phase 3：质量门禁与前端工作台
+
+交付物：
+
+- `Comment Admission Gate`
+- `Quality Scoring`
+- PR Summary 聚合
+- Diff Viewer 联动
+- WebSocket 增量更新
+
+验收标准：
+
+- 低信号评论被显著压制。
+- 高风险评论能附带证据链。
+- 前端可查看文件、评论、上下文和最终建议。
+
+### 14.4 Phase 4：GitHub 回写与缓存
+
+交付物：
+
+- GitHub inline review comment 回写
+- 基于 `head_sha + patch_hash` 的缓存
+- 历史 review pattern 检索
+
+验收标准：
+
+- 相同 PR 重跑能复用未变化文件的结果。
+- 用户可将高质量评论写回 GitHub。
+
+## 15. 关键风险与控制策略
+
+### 15.1 风险：任意语言支持过度承诺
+
+控制：
+
+- 产品层说“任意仓库可接入”。
+- 工程层明确“一期高质量支持 TS/JS，其他语言先做基础能力”。
+
+### 15.2 风险：调用图不完整
+
+控制：
+
+- 静态调用图允许“不完整但可解释”。
+- 对动态语言或反射场景，不强行输出高置信评论。
+- 用 `insufficient_evidence` 保持诚实。
+
+### 15.3 风险：上下文失控
+
+控制：
+
+- 强制 `ContextBudget`
+- 强制工具白名单
+- 强制二轮上限
+
+### 15.4 风险：评论质量滑坡
+
+控制：
+
+- Admission Gate
+- Quality Score
+- 低信号短语惩罚
+- 去重指纹
+
+## 16. 当前代码与文档对齐结论
+
+截至当前仓库状态，下面这些能力已经有真实骨架，不是纸面设计：
+
+- `packages/shared-types`
+  - 已有 `ReviewTriageDecision`、`ContextRequest`、`ContextBudget`、`CommentAdmissionDecision`、`QualityScoreBreakdown`
+- `packages/review-core`
+  - 已有 `createContextFetchPlan`
+  - 已有 `evaluateReviewTriage`
+  - 已有 `evaluateCommentAdmission`
+  - 已有 `scoreCommentCandidate`
+- `apps/api`
+  - 已有对应调试控制器与 service 包装层
+- `apps/worker`
+  - 已有最小可执行 review pipeline 示例
+
+因此，这份文档不是“从零想象”，而是基于当前骨架往完整系统推进的设计规格。
+
+## 17. 最终结论
+
+这个项目的成败，不在于它是不是“用了 RAG”，也不在于它是不是“给了 LLM tool use”。
+
+真正的关键是：
+
+1. 是否先建对了 `Repository Intelligence`。
+2. 是否把代码事实和语义背景分层。
+3. 是否让模型先做 `Triage`，再决定要不要检索。
+4. 是否用 `Admission Gate + Quality Scoring` 把废话压掉。
+
+正确的系统定位应该是：
+
+`一个以仓库语义地图为底座、以证据为中心、按需动态检索上下文的 AI PR Review 系统。`

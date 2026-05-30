@@ -1,0 +1,46 @@
+{
+  "status": "planned",
+  "reason": "上下文检索计划已生成，可交由 Context Fetcher 执行",
+  "plannedCalls": [
+    {
+      "toolName": "find_symbol_definition",
+      "query": "AuthService.refreshToken",
+      "estimatedFiles": 1,
+      "estimatedTokens": 800
+    },
+    {
+      "toolName": "find_callers",
+      "query": "AuthService.refreshToken",
+      "estimatedFiles": 2,
+      "estimatedTokens": 1200
+    },
+    {
+      "toolName": "find_related_tests",
+      "query": "AuthService.refreshToken",
+      "estimatedFiles": 2,
+      "estimatedTokens": 1200
+    }
+  ],
+  "artifacts": [
+    {
+      "toolName": "find_callers",
+      "relation": "caller",
+      "filePath": "src/auth/auth-middleware.ts",
+      "symbolName": "AuthMiddleware.authMiddleware",
+      "startLine": 9,
+      "endLine": 43,
+      "preview": "authMiddleware 仍使用 if (await refreshToken(...)) 做真假判断。"
+    }
+  ],
+  "remainingBudget": {
+    "maxRounds": 2,
+    "maxToolCalls": 6,
+    "maxExtraFiles": 8,
+    "maxCallDepth": 2,
+    "maxExtraTokens": 20000,
+    "usedRounds": 1,
+    "usedToolCalls": 3,
+    "usedExtraFiles": 5,
+    "usedExtraTokens": 3200
+  }
+}

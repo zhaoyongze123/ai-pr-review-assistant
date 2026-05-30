@@ -1,0 +1,38 @@
+{
+  "id": "ea2d0d76-52d3-4307-afd9-b7f6978ab286",
+  "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+  "provider": "github",
+  "owner": "acme-inc",
+  "repo": "payments-service",
+  "prNumber": 128,
+  "title": "refactor: 调整 refresh token 返回值语义",
+  "authorLogin": "alice",
+  "baseBranch": "main",
+  "headBranch": "feature/refresh-token-refactor",
+  "baseSha": "fa1f537b9a47b6150c304ba44820ac4f7f55dd27",
+  "headSha": "b7c9a51db947d15415462f99d3d5174a081fbe43",
+  "changedFiles": 2,
+  "additions": 34,
+  "deletions": 12,
+  "state": "open",
+  "files": [
+    {
+      "filePath": "src/auth/auth.service.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 7,
+      "patch": "@@ -97,7 +97,8 @@ export class AuthService {\n-    return false;\n+    return { refreshed: false, reason: 'expired' };\n   }\n",
+      "language": "TypeScript"
+    },
+    {
+      "filePath": "src/auth/auth.service.spec.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 5,
+      "patch": "@@ -41,7 +41,11 @@ describe('refreshToken', () => {\n-  expect(result).toBe(false);\n+  expect(result).toEqual({\n+    refreshed: false,\n+    reason: 'expired'\n+  });\n });",
+      "language": "TypeScript"
+    }
+  ],
+  "createdAt": "2026-05-30T03:24:00.000Z",
+  "updatedAt": "2026-05-30T03:24:00.000Z"
+}

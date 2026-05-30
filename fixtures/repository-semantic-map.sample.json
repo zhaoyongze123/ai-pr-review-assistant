@@ -1,0 +1,115 @@
+{
+  "repository": {
+    "id": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+    "provider": "github",
+    "owner": "acme-inc",
+    "repo": "payments-service",
+    "defaultBranch": "main",
+    "cloneUrl": "https://github.com/acme-inc/payments-service.git",
+    "isActive": true,
+    "createdAt": "2026-05-30T03:20:00.000Z",
+    "updatedAt": "2026-05-30T03:20:00.000Z"
+  },
+  "latestScan": {
+    "id": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+    "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+    "scanType": "full",
+    "targetSha": "4df8ef9880d10ca9375fb1ca4d9072be6da53ca0",
+    "status": "done",
+    "languageSummary": [
+      {
+        "language": "TypeScript",
+        "fileCount": 128,
+        "estimatedLines": 18420
+      }
+    ],
+    "frameworkSummary": ["nestjs", "typeorm"],
+    "startedAt": "2026-05-30T03:21:00.000Z",
+    "finishedAt": "2026-05-30T03:22:30.000Z",
+    "createdAt": "2026-05-30T03:21:00.000Z",
+    "updatedAt": "2026-05-30T03:22:30.000Z"
+  },
+  "files": [
+    {
+      "id": "a8058016-bc1f-4330-9dd8-9b62cde1165a",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "filePath": "src/auth/jwt.ts",
+      "language": "TypeScript",
+      "kind": "source",
+      "moduleName": "auth",
+      "summary": "负责 JWT 解析、验签和权限上下文提取。",
+      "riskTags": ["auth"],
+      "checksum": "fc8e591737940d7f3f4039154b4c7730b80b4d31"
+    },
+    {
+      "id": "0cad4d6a-98c3-469f-8451-3c90af5f76b7",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "filePath": "docs/authentication.md",
+      "language": "Markdown",
+      "kind": "doc",
+      "moduleName": "auth",
+      "summary": "说明 access token 和 refresh token 的生命周期与约束。",
+      "riskTags": ["auth"],
+      "checksum": "5db9ce1f7fc1c5f3ebf49d73ab6f3e858d20df35"
+    }
+  ],
+  "symbols": [
+    {
+      "id": "e0f1c9c9-6dc8-4204-9982-7e63f847f1cc",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "filePath": "src/auth/jwt.ts",
+      "symbolName": "verifyToken",
+      "qualifiedName": "AuthJwt.verifyToken",
+      "kind": "function",
+      "startLine": 18,
+      "endLine": 57,
+      "signature": "(token: string, allowExpired?: boolean) => Promise<VerifiedToken>",
+      "moduleName": "auth",
+      "riskTags": ["auth"]
+    },
+    {
+      "id": "c1f8c5c1-6db7-4c84-a410-b49dbb1eff9d",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "filePath": "src/auth/auth-middleware.ts",
+      "symbolName": "authMiddleware",
+      "qualifiedName": "AuthMiddleware.authMiddleware",
+      "kind": "function",
+      "startLine": 9,
+      "endLine": 43,
+      "signature": "(req, res, next) => Promise<void>",
+      "moduleName": "auth",
+      "riskTags": ["auth"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "98b48655-82f2-441e-8ce5-51166d85c72f",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "fromQualifiedName": "AuthMiddleware.authMiddleware",
+      "toQualifiedName": "AuthJwt.verifyToken",
+      "edgeType": "calls"
+    }
+  ],
+  "semanticDocuments": [
+    {
+      "id": "b20ad6a8-0740-4bf2-bbc6-a96025df2abc",
+      "repositoryId": "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+      "scanId": "31b6f6e4-f8ea-4e30-b86a-cadce50fca55",
+      "sourcePath": "docs/authentication.md",
+      "documentType": "doc",
+      "chunkIndex": 0,
+      "title": "Authentication",
+      "moduleName": "auth",
+      "content": "系统使用短期 access token 和长期 refresh token，refresh token 旋转失败必须立即使旧 token 失效。",
+      "tags": ["auth", "jwt", "refresh-token"],
+      "metadata": {
+        "heading": "Token lifecycle"
+      }
+    }
+  ]
+}
