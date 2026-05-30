@@ -9,7 +9,9 @@
     "lint": "echo \"api lint placeholder\"",
     "check": "tsc -p tsconfig.json --noEmit",
     "validate:repository-connect": "tsx src/modules/repositories/repository-connect.validation.ts",
-    "smoke:repository-connect": "tsx src/modules/repositories/repository-connect.integration.ts"
+    "smoke:repository-connect": "tsx src/modules/repositories/repository-connect.integration.ts",
+    "validate:repository-scan": "tsx src/modules/scans/repository-scan.validation.ts",
+    "smoke:repository-scan": "tsx ../worker/scripts/repository-scan.integration.ts"
   },
   "dependencies": {
     "@ai-pr-review/review-core": "0.1.0",
@@ -17,7 +19,9 @@
     "@nestjs/common": "^11.1.24",
     "@nestjs/core": "^11.1.24",
     "@nestjs/platform-express": "^11.1.24",
+    "bullmq": "^5.77.6",
     "dotenv": "^17.4.2",
+    "ioredis": "^5.11.0",
     "pg": "^8.21.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
