@@ -2,6 +2,9 @@ import { existsSync } from "node:fs";
 import { Inject, Injectable } from "@nestjs/common";
 import { parseUnifiedDiffPatch } from "@ai-pr-review/diff-core";
 import {
+  buildFileReviewSummary,
+  buildReviewAggregateResult,
+  finalizeFileReviewComments,
   runFirstPassReviewPipeline,
   runReviewPipeline,
 } from "@ai-pr-review/review-core";
@@ -20,6 +23,8 @@ import {
   type FileReview,
   type HighestSeverity,
   type LlmCallLog,
+  type ReviewAggregateResult,
+  type ReviewComment,
   type ReviewCommentCandidate,
   type RuleViolation,
   type ReviewRiskLevel,
@@ -37,6 +42,7 @@ import { FileReviewStoreService } from "./file-review-store.service.js";
 import { LangsmithTraceService } from "./langsmith-trace.service.js";
 import { LlmCallLogStoreService } from "./llm-call-log-store.service.js";
 import { PullRequestStoreService } from "./pull-request-store.service.js";
+import { ReviewCommentStoreService } from "./review-comment-store.service.js";
 import { ReviewJobStoreService } from "./review-job-store.service.js";
 import { RuleEngineClientService } from "./rule-engine-client.service.js";
 import { withClonedRepository } from "./with-cloned-repository.js";
@@ -64,6 +70,8 @@ export class FirstPassReviewService {
     private readonly fileReviewStoreService: FileReviewStoreService,
     @Inject(LlmCallLogStoreService)
     private readonly llmCallLogStoreService: LlmCallLogStoreService,
+    @Inject(ReviewCommentStoreService)
+    private readonly reviewCommentStoreService: ReviewCommentStoreService,
     @Inject(LangsmithTraceService)
     private readonly langsmithTraceService: LangsmithTraceService,
   ) {}
@@ -164,6 +172,7 @@ export class FirstPassReviewService {
               }
 
               const fileReviews: FileReview[] = [];
+              const comments: ReviewComment[] = [];
               const llmCalls: LlmCallLog[] = [];
               const files: FirstPassReviewRunResponse["files"] = [];
               let totalInputTokens = 0;
@@ -205,6 +214,7 @@ export class FirstPassReviewService {
                   );
 
                   fileReviews.push(result.fileReview);
+                  comments.push(...result.comments);
                   files.push(result.fileResult);
                   if (result.llmCalls.length > 0) {
                     llmCalls.push(...result.llmCalls);
@@ -229,6 +239,7 @@ export class FirstPassReviewService {
                         result.fileResult.contextResult?.artifacts.length ?? 0,
                       secondPassDecision:
                         result.fileResult.secondPass?.decision ?? null,
+                      finalCommentCount: result.comments.length,
                     },
                   });
                 } catch (error) {
@@ -252,6 +263,18 @@ export class FirstPassReviewService {
                   durationMs: Date.now() - startedAt,
                 });
 
+              const aggregateResult = buildReviewAggregateResult({
+                reviewJob: finishedReviewJob,
+                pullRequest: persistedPullRequest,
+                fileReviews,
+                comments,
+              });
+              await this.traceAggregateSummary({
+                reviewJobId: reviewJob.id!,
+                parentRun: reviewJobTrace,
+                aggregateResult,
+              });
+
               return FirstPassReviewRunResponseSchema.parse({
                 reviewJob: finishedReviewJob,
                 pullRequest: persistedPullRequest,
@@ -259,6 +282,9 @@ export class FirstPassReviewService {
                 ruleViolations: ruleScan.violations,
                 ruleFailures: ruleScan.failures,
                 fileReviews,
+                comments,
+                summary: aggregateResult.summary,
+                aggregateResult,
                 llmCalls,
                 files,
               });
@@ -271,8 +297,10 @@ export class FirstPassReviewService {
         outputs: {
           reviewJobId: response.reviewJob?.id,
           totalFiles: response.files.length,
+          totalComments: response.comments.length,
           totalRuleViolations: response.ruleViolations.length,
           totalLlmCalls: response.llmCalls.length,
+          mergeRecommendation: response.summary?.mergeRecommendation ?? null,
         },
       });
       await this.langsmithTraceService.flush();
@@ -302,6 +330,7 @@ export class FirstPassReviewService {
     parentRun?: Awaited<ReturnType<LangsmithTraceService["startRun"]>>;
   }): Promise<{
     fileReview: FileReview;
+    comments: ReviewComment[];
     llmCalls: LlmCallLog[];
     fileResult: FirstPassReviewRunResponse["files"][number];
   }> {
@@ -403,25 +432,58 @@ export class FirstPassReviewService {
     const finalDecision = secondPassResult?.decision ?? decision.decision;
     const finalCandidates =
       secondPassResult?.candidateComments ?? decision.provisionalFindings;
+    const contextRound = contextResult ? 1 : 0;
+    const finalizedComments = finalizeFileReviewComments({
+      reviewJobId: input.reviewJobId,
+      filePath: input.file.filePath,
+      diff,
+      aiCandidates: finalCandidates,
+      ruleViolations: relatedViolations,
+      triageDecision: finalDecision,
+      contextRound,
+    });
+    await this.traceQualityScoring({
+      reviewJobId: input.reviewJobId,
+      filePath: input.file.filePath,
+      parentRun: input.parentRun,
+      finalizedComments,
+    });
+    await this.traceCommentAdmission({
+      reviewJobId: input.reviewJobId,
+      filePath: input.file.filePath,
+      parentRun: input.parentRun,
+      finalizedComments,
+    });
     const highestSeverity = pickHighestSeverity(
       relatedViolations,
       finalCandidates,
     );
     const riskScore = mapRiskScore(decision.riskLevel, highestSeverity);
+    const fileSummary = buildFileReviewSummary({
+      comments: finalizedComments.comments,
+      fallbackSummary: secondPassResult?.rationale ?? decision.rationale,
+      triageDecision: finalDecision,
+    });
 
     const fileReview = await this.fileReviewStoreService.upsertResult({
       reviewJobId: input.reviewJobId,
       pullRequestId: input.pullRequestId,
       file: input.file,
       triageDecision: finalDecision,
-      aiCommentCount: finalCandidates.length,
-      ruleCommentCount: relatedViolations.length,
+      aiCommentCount: finalizedComments.aiComments.length,
+      ruleCommentCount: finalizedComments.ruleComments.length,
       highestSeverity,
       riskScore,
-      summary: secondPassResult?.rationale ?? decision.rationale,
+      summary: fileSummary,
       durationMs: Date.now() - fileStartedAt,
-      contextRound: contextResult ? 1 : 0,
+      contextRound,
     });
+    const comments = await this.reviewCommentStoreService.createMany(
+      finalizedComments.comments.map((comment) => ({
+        ...comment,
+        fileReviewId: fileReview.id,
+      })),
+    );
 
     const llmCalls: LlmCallLog[] = [];
     if (llmResult) {
@@ -457,7 +519,7 @@ export class FirstPassReviewService {
           latencyMs: secondPass.latencyMs,
           requestMetadata: {
             ...secondPass.requestMetadata,
-            promptVersion: "second-pass-review.v1",
+            promptVersion: "second-pass-review.v2",
             filePath: input.file.filePath,
             contextArtifactCount: contextResult?.artifacts.length ?? 0,
           },
@@ -475,6 +537,7 @@ export class FirstPassReviewService {
 
     return {
       fileReview,
+      comments,
       llmCalls,
       fileResult: {
         file: input.file,
@@ -697,6 +760,111 @@ export class FirstPassReviewService {
       usedRound:
         input.contextResult?.remainingBudget.usedRounds ??
         input.contextPlan.remainingBudget.usedRounds,
+    });
+  }
+
+  private async traceQualityScoring(input: {
+    reviewJobId: string;
+    filePath: string;
+    finalizedComments: ReturnType<typeof finalizeFileReviewComments>;
+    parentRun?: Awaited<ReturnType<LangsmithTraceService["startRun"]>>;
+  }) {
+    const trace = await this.langsmithTraceService.startRun({
+      name: "quality-scoring",
+      runType: "tool",
+      parentRun: input.parentRun,
+      inputs: {
+        candidateCount: input.finalizedComments.beforeGateCount,
+      },
+      metadata: {
+        reviewJobId: input.reviewJobId,
+        filePath: input.filePath,
+      },
+      tags: ["quality-scoring"],
+    });
+
+    const scores = input.finalizedComments.admissionDecisions.map(
+      (decision) => decision.score.total,
+    );
+    const averageScore =
+      scores.length > 0
+        ? Math.round(
+            scores.reduce((sum, value) => sum + value, 0) / scores.length,
+          )
+        : 0;
+
+    await this.langsmithTraceService.endRun({
+      run: trace,
+      outputs: {
+        candidateCount: input.finalizedComments.beforeGateCount,
+        averageScore,
+        maxScore: scores.length > 0 ? Math.max(...scores) : 0,
+        minScore: scores.length > 0 ? Math.min(...scores) : 0,
+      },
+    });
+  }
+
+  private async traceCommentAdmission(input: {
+    reviewJobId: string;
+    filePath: string;
+    finalizedComments: ReturnType<typeof finalizeFileReviewComments>;
+    parentRun?: Awaited<ReturnType<LangsmithTraceService["startRun"]>>;
+  }) {
+    const trace = await this.langsmithTraceService.startRun({
+      name: "comment-admission",
+      runType: "tool",
+      parentRun: input.parentRun,
+      inputs: {
+        candidateCount: input.finalizedComments.beforeGateCount,
+        ruleCommentCount: input.finalizedComments.ruleComments.length,
+      },
+      metadata: {
+        reviewJobId: input.reviewJobId,
+        filePath: input.filePath,
+      },
+      tags: ["comment-admission"],
+    });
+
+    await this.langsmithTraceService.endRun({
+      run: trace,
+      outputs: {
+        beforeGateCount: input.finalizedComments.beforeGateCount,
+        afterGateCount: input.finalizedComments.afterGateCount,
+        ruleCommentCount: input.finalizedComments.ruleComments.length,
+        duplicateSuppressedCount: input.finalizedComments.duplicateCount,
+        suppressedCount:
+          input.finalizedComments.beforeGateCount -
+          input.finalizedComments.afterGateCount,
+      },
+    });
+  }
+
+  private async traceAggregateSummary(input: {
+    reviewJobId: string;
+    aggregateResult: ReviewAggregateResult;
+    parentRun?: Awaited<ReturnType<LangsmithTraceService["startRun"]>>;
+  }) {
+    const trace = await this.langsmithTraceService.startRun({
+      name: "final-aggregate-summary",
+      runType: "tool",
+      parentRun: input.parentRun,
+      inputs: {
+        fileCount: input.aggregateResult.files.length,
+        commentCount: input.aggregateResult.comments.length,
+      },
+      metadata: {
+        reviewJobId: input.reviewJobId,
+      },
+      tags: ["aggregate-summary"],
+    });
+
+    await this.langsmithTraceService.endRun({
+      run: trace,
+      outputs: {
+        mergeRecommendation: input.aggregateResult.summary.mergeRecommendation,
+        headline: input.aggregateResult.summary.headline,
+        notableFindings: input.aggregateResult.summary.notableFindings,
+      },
     });
   }
 }

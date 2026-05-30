@@ -1,0 +1,29 @@
+{
+  "admitted": false,
+  "reasons": [
+    "缺少 evidence_refs，无法回溯证据链",
+    "消息没有明确说明故障条件或影响方式",
+    "模型置信度低于默认准入阈值 0.55",
+    "消息过短，无法支撑开发者做出准确判断",
+    "质量分低于默认准入阈值 65"
+  ],
+  "score": {
+    "evidenceStrength": 45,
+    "impactClarity": 25,
+    "actionability": 10,
+    "specificity": 30,
+    "novelty": 55,
+    "noisePenalty": 45,
+    "total": 24
+  },
+  "normalizedCandidate": {
+    "diffLineRef": "L12+",
+    "lineRefs": ["L12+"],
+    "severity": "LOW",
+    "category": "maintainability",
+    "title": "建议关注一下",
+    "message": "建议关注一下这里。",
+    "confidence": 0.42,
+    "evidenceRefs": []
+  }
+}

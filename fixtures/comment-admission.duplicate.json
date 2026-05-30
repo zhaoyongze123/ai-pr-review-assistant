@@ -1,0 +1,29 @@
+{
+  "admitted": false,
+  "reasons": ["与同文件已有评论重复"],
+  "score": {
+    "evidenceStrength": 81,
+    "impactClarity": 80,
+    "actionability": 80,
+    "specificity": 80,
+    "novelty": 90,
+    "noisePenalty": 0,
+    "total": 80
+  },
+  "normalizedCandidate": {
+    "diffLineRef": "L101+",
+    "lineRefs": ["L101+"],
+    "severity": "HIGH",
+    "category": "bug",
+    "title": "返回值语义变化可能破坏旧调用方分支逻辑",
+    "message": "如果调用方仍然按旧布尔返回值做真假判断，会把失败分支误判为成功或走到错误路径。",
+    "suggestion": "补查所有直接调用方，统一迁移到新对象语义再合并。",
+    "confidence": 0.82,
+    "evidenceRefs": [
+      "diff:L101+",
+      "symbol:AuthService.refreshToken",
+      "caller:AuthMiddleware.authMiddleware"
+    ],
+    "duplicateFingerprint": "auth-refresh-return-shape-change-callers"
+  }
+}

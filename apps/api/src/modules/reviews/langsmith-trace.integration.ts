@@ -271,6 +271,49 @@ async function main() {
         }),
       );
 
+      const qualityRun = fileRun.createChild({
+        name: "quality-scoring",
+        run_type: "tool",
+        inputs: {
+          candidateCount: 1,
+        },
+        metadata: {
+          stage: "langsmith-trace-smoke",
+          filePath: "src/auth.ts",
+        },
+        tags: ["smoke", "quality-scoring"],
+      });
+      await qualityRun.postRun();
+      await qualityRun.end({
+        candidateCount: 1,
+        averageScore: 80,
+        maxScore: 80,
+        minScore: 80,
+      });
+      await qualityRun.patchRun();
+
+      const admissionRun = fileRun.createChild({
+        name: "comment-admission",
+        run_type: "tool",
+        inputs: {
+          candidateCount: 1,
+          ruleCommentCount: 0,
+        },
+        metadata: {
+          stage: "langsmith-trace-smoke",
+          filePath: "src/auth.ts",
+        },
+        tags: ["smoke", "comment-admission"],
+      });
+      await admissionRun.postRun();
+      await admissionRun.end({
+        beforeGateCount: 1,
+        afterGateCount: 1,
+        duplicateSuppressedCount: 0,
+        suppressedCount: 0,
+      });
+      await admissionRun.patchRun();
+
       await fileRun.end({
         triageDecision: llmResult.parsed.decision,
         plannedCalls: contextPlan.plannedCalls.length,
@@ -285,10 +328,31 @@ async function main() {
       throw error;
     }
 
+    const aggregateRun = rootRun.createChild({
+      name: "final-aggregate-summary",
+      run_type: "tool",
+      inputs: {
+        fileCount: 1,
+        commentCount: 1,
+      },
+      metadata: {
+        stage: "langsmith-trace-smoke",
+      },
+      tags: ["smoke", "aggregate-summary"],
+    });
+    await aggregateRun.postRun();
+    await aggregateRun.end({
+      mergeRecommendation: "request_changes",
+      headline: "PR 存在 1 个高风险问题，建议先修复再合并。",
+      notableFindings: ["Raw token returned"],
+    });
+    await aggregateRun.patchRun();
+
     await rootRun.end({
       ok: true,
     });
     await rootRun.patchRun();
+
     await client.flush();
 
     await sleep(2500);
@@ -317,6 +381,13 @@ async function main() {
       (run) => run.name === "context-fetch-summary",
     );
     const secondPass = runs.find((run) => run.name === "second-pass-review");
+    const qualityScoring = runs.find((run) => run.name === "quality-scoring");
+    const commentAdmission = runs.find(
+      (run) => run.name === "comment-admission",
+    );
+    const aggregateSummary = runs.find(
+      (run) => run.name === "final-aggregate-summary",
+    );
 
     assert(reviewJob, "必须能查到 review-job 根 trace");
     assert(ruleEngine, "必须能查到 rule-engine-scan trace");
@@ -325,12 +396,18 @@ async function main() {
     assert(contextFetch, "必须能查到 context-fetch-plan trace");
     assert(contextSummary, "必须能查到 context-fetch-summary trace");
     assert(secondPass, "必须能查到 second-pass-review trace");
+    assert(qualityScoring, "必须能查到 quality-scoring trace");
+    assert(commentAdmission, "必须能查到 comment-admission trace");
+    assert(aggregateSummary, "必须能查到 final-aggregate-summary trace");
     assert.equal(ruleEngine.parentRunId, reviewJob.id);
     assert.equal(reviewFile.parentRunId, reviewJob.id);
     assert.equal(firstPass.parentRunId, reviewFile.id);
     assert.equal(contextFetch.parentRunId, reviewFile.id);
     assert.equal(contextSummary.parentRunId, reviewFile.id);
     assert.equal(secondPass.parentRunId, reviewFile.id);
+    assert.equal(qualityScoring.parentRunId, reviewFile.id);
+    assert.equal(commentAdmission.parentRunId, reviewFile.id);
+    assert.equal(aggregateSummary.parentRunId, reviewJob.id);
 
     console.log(
       JSON.stringify(

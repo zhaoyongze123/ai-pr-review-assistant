@@ -15,6 +15,7 @@ import { FileReviewStoreService } from "./modules/reviews/file-review-store.serv
 import { LangsmithTraceService } from "./modules/reviews/langsmith-trace.service.js";
 import { LlmCallLogStoreService } from "./modules/reviews/llm-call-log-store.service.js";
 import { PullRequestStoreService } from "./modules/reviews/pull-request-store.service.js";
+import { ReviewCommentStoreService } from "./modules/reviews/review-comment-store.service.js";
 import { ReviewJobStoreService } from "./modules/reviews/review-job-store.service.js";
 import { RuleEngineClientService } from "./modules/reviews/rule-engine-client.service.js";
 import { SemanticRetrievalController } from "./modules/retrieval/semantic-retrieval.controller.js";
@@ -49,6 +50,7 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
     LlmCallLogStoreService,
     PullRequestStoreService,
     RepositoryConnectService,
+    ReviewCommentStoreService,
     RuleEngineClientService,
     ReviewJobStoreService,
     SemanticRetrievalService,

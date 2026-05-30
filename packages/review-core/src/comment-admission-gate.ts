@@ -25,8 +25,16 @@ export function evaluateCommentAdmission(
     reasons.push("消息没有明确说明故障条件或影响方式");
   }
 
-  if (score.total < 60) {
-    reasons.push("质量分低于默认准入阈值 60");
+  if ((candidate.confidence ?? 0.5) < 0.55) {
+    reasons.push("模型置信度低于默认准入阈值 0.55");
+  }
+
+  if (candidate.message.trim().length < 24) {
+    reasons.push("消息过短，无法支撑开发者做出准确判断");
+  }
+
+  if (score.total < 65) {
+    reasons.push("质量分低于默认准入阈值 65");
   }
 
   return CommentAdmissionDecisionSchema.parse({

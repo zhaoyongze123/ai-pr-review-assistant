@@ -66,21 +66,21 @@
 
 ## 4. 模块摘要表
 
-| 模块 | 名称                    | 主要产出                               | 依赖           | LangSmith                   |
-| ---- | ----------------------- | -------------------------------------- | -------------- | --------------------------- |
-| M0   | 契约与持久化真源        | schema、DDL、fixtures                  | 无             | 不接                        |
-| M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                        |
-| M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                        |
-| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源          |
-| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 已完成，当前不接            |
-| M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                        |
-| M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制            |
-| M7   | 首轮审查与 Triage       | first-pass review、triage decision     | M0, M5, M6     | 需要 trace                  |
-| M8   | 上下文检索与二轮审查    | context fetch、second-pass review      | M0, M3, M4, M7 | 已完成真实验收              |
-| M9   | 评论准入与结果聚合      | comments、summary、merge suggestion    | M0, M7, M8     | 需要 trace 与评估样本       |
-| M10  | API 查询面与 Web 工作台 | review job query、diff viewer、联动 UI | M0, M5, M9     | 不直接依赖                  |
-| M11  | GitHub 回写             | inline review comments 回写            | M0, M9         | 可记录结果，不做主依赖      |
-| M12  | Observability 与评估    | tracing、dataset、evaluation           | M7, M8, M9     | 部分完成，待补 gate/dataset |
+| 模块 | 名称                    | 主要产出                               | 依赖           | LangSmith                          |
+| ---- | ----------------------- | -------------------------------------- | -------------- | ---------------------------------- |
+| M0   | 契约与持久化真源        | schema、DDL、fixtures                  | 无             | 不接                               |
+| M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                               |
+| M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                               |
+| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源                 |
+| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 已完成，当前不接                   |
+| M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                               |
+| M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制                   |
+| M7   | 首轮审查与 Triage       | first-pass review、triage decision     | M0, M5, M6     | 需要 trace                         |
+| M8   | 上下文检索与二轮审查    | context fetch、second-pass review      | M0, M3, M4, M7 | 已完成真实验收                     |
+| M9   | 评论准入与结果聚合      | comments、summary、merge suggestion    | M0, M7, M8     | 已完成真实验收                     |
+| M10  | API 查询面与 Web 工作台 | review job query、diff viewer、联动 UI | M0, M5, M9     | 不直接依赖                         |
+| M11  | GitHub 回写             | inline review comments 回写            | M0, M9         | 可记录结果，不做主依赖             |
+| M12  | Observability 与评估    | tracing、dataset、evaluation           | M7, M8, M9     | 部分完成，待补 dataset/统一 tracer |
 
 ## 5. 模块详细计划
 
@@ -654,10 +654,13 @@
 
 ### 当前状态
 
-已有骨架：
+已完成：
 
-- `evaluateCommentAdmission`
-- `scoreCommentCandidate`
+- `evaluateCommentAdmission` 已接入更严格的准入阈值和低信号压制
+- `scoreCommentCandidate` 已补强噪音惩罚与总分计算
+- 已落地 duplicate fingerprint 去重、`review_comments` 落库与 `ReviewAggregateResult`
+- 真实 smoke 已验证 `aggregateResult` 和 `review_comments` 同步输出
+- LangSmith smoke 已验证 `quality-scoring`、`comment-admission`、`final-aggregate-summary`
 
 ### 代码落点
 
@@ -857,7 +860,6 @@
 
 仍未完成：
 
-- M9 gate / quality 的 trace 还没有全部接完
 - dataset、评估脚本、脱敏策略还没落地
 - `packages/observability` 这一层抽象还没独立拆出
 

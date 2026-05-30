@@ -21,8 +21,8 @@ export type SecondPassPrompt = {
   messages: PromptMessage[];
 };
 
-const FIRST_PASS_PROMPT_VERSION = "first-pass-triage.v1";
-const SECOND_PASS_PROMPT_VERSION = "second-pass-review.v1";
+const FIRST_PASS_PROMPT_VERSION = "first-pass-triage.v2";
+const SECOND_PASS_PROMPT_VERSION = "second-pass-review.v2";
 
 export function buildFirstPassReviewPrompt(input: {
   file: PullRequestFile;
@@ -55,6 +55,8 @@ export function buildFirstPassReviewPrompt(input: {
           "如果证据不足，不要编造问题。",
           "如果选择 need_more_context，必须提供 contextRequest。",
           "provisionalFindings 中的 diffLineRef 必须来自给定 allowedDiffLineRefs。",
+          "所有自然语言字段必须使用简体中文，包括 rationale、contextRequest.reason、title、message、suggestion。",
+          "代码标识符、文件路径、符号名、diffLineRef、evidenceRefs、duplicateFingerprint 必须保持原样，不要翻译，不要改写。",
           "message 必须说明故障条件或影响方式，避免空泛措辞。",
           "severity 只能是 HIGH、MEDIUM、LOW、INFO。",
           "category 只能是 security、bug、performance、concurrency、style、maintainability、testing。",
@@ -81,7 +83,7 @@ export function buildFirstPassReviewPrompt(input: {
                 "final_review | need_more_context | no_issue | insufficient_evidence",
               confidence: 0.0,
               riskLevel: "low | medium | high",
-              rationale: "string",
+              rationale: "简体中文字符串",
               evidenceCoverage: {
                 modifiedSymbol: true,
                 localContext: true,
@@ -96,16 +98,16 @@ export function buildFirstPassReviewPrompt(input: {
                   lineRefs: [allowedRefs[0] ?? "optional"],
                   severity: "HIGH",
                   category: "bug",
-                  title: "string",
-                  message: "string",
-                  suggestion: "optional string",
+                  title: "简体中文标题",
+                  message: "简体中文问题说明",
+                  suggestion: "可选的简体中文修复建议",
                   confidence: 0.0,
                   evidenceRefs: ["diff:...", "rule:..."],
                   duplicateFingerprint: "string",
                 },
               ],
               contextRequest: {
-                reason: "string",
+                reason: "简体中文原因说明",
                 symbols: ["string"],
                 files: ["string"],
                 callersOf: ["string"],
@@ -150,7 +152,9 @@ export function buildSecondPassReviewPrompt(input: {
               artifact.startLine && artifact.endLine
                 ? ` lines=${artifact.startLine}-${artifact.endLine}`
                 : "";
-            const relation = artifact.relation ? ` relation=${artifact.relation}` : "";
+            const relation = artifact.relation
+              ? ` relation=${artifact.relation}`
+              : "";
             const symbol = artifact.symbolName
               ? ` symbol=${artifact.symbolName}`
               : "";
@@ -175,6 +179,8 @@ export function buildSecondPassReviewPrompt(input: {
           "你必须只返回一个 JSON 对象，不要输出 Markdown、解释、代码块或额外文字。",
           "decision 只能是 final_review、no_issue、insufficient_evidence 之一。",
           "candidateComments 中的 diffLineRef 必须来自给定 allowedDiffLineRefs。",
+          "所有自然语言字段必须使用简体中文，包括 rationale、title、message、suggestion。",
+          "代码标识符、文件路径、符号名、diffLineRef、evidenceRefs、duplicateFingerprint 必须保持原样，不要翻译，不要改写。",
         ].join("\n"),
       },
       {
@@ -202,16 +208,16 @@ export function buildSecondPassReviewPrompt(input: {
             {
               decision: "final_review | no_issue | insufficient_evidence",
               confidence: 0.0,
-              rationale: "string",
+              rationale: "简体中文字符串",
               candidateComments: [
                 {
                   diffLineRef: allowedRefs[0] ?? "required when comment exists",
                   lineRefs: [allowedRefs[0] ?? "required when comment exists"],
                   severity: "HIGH",
                   category: "bug",
-                  title: "string",
-                  message: "string",
-                  suggestion: "optional string",
+                  title: "简体中文标题",
+                  message: "简体中文问题说明",
+                  suggestion: "可选的简体中文修复建议",
                   confidence: 0.0,
                   evidenceRefs: ["diff:...", "context:..."],
                   duplicateFingerprint: "string",

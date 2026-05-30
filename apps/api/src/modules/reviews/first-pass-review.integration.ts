@@ -90,6 +90,13 @@ async function main() {
     assert.ok(payload.reviewJob?.id, "必须返回 review job");
     assert.ok(payload.fileReviews.length > 0, "必须落文件级审查结果");
     assert.ok(payload.llmCalls.length > 0, "真实 LLM 调用必须落日志");
+    assert.ok(payload.aggregateResult, "必须返回 ReviewAggregateResult");
+    assert.ok(payload.summary?.headline?.length, "必须返回可展示的 PR summary");
+    assert.equal(
+      payload.aggregateResult.reviewJob.id,
+      payload.reviewJob?.id,
+      "aggregateResult.reviewJob 必须和顶层 reviewJob 对齐",
+    );
     assert.ok(
       payload.files.some((fileResult) =>
         [
@@ -119,6 +126,7 @@ async function main() {
       pull_request_count: string;
       review_job_count: string;
       file_review_count: string;
+      review_comment_count: string;
       llm_call_count: string;
       context_fetch_log_count: string;
       context_round_file_count: string;
@@ -151,6 +159,11 @@ async function main() {
             from file_reviews
             where review_job_id = $1
           ) as file_review_count,
+          (
+            select count(*)
+            from review_comments
+            where review_job_id = $1
+          ) as review_comment_count,
           (
             select count(*)
             from llm_call_logs
@@ -188,6 +201,11 @@ async function main() {
     assert.ok(
       Number(row.file_review_count) >= 1,
       "file_reviews 表必须存在记录",
+    );
+    assert.equal(
+      Number(row.review_comment_count),
+      payload.comments.length,
+      "review_comments 表记录数必须与响应 comments 数量一致",
     );
     assert.ok(Number(row.llm_call_count) >= 1, "llm_call_logs 表必须存在记录");
     assert.ok(
