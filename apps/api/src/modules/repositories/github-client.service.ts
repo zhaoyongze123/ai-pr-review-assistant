@@ -167,6 +167,14 @@ export class GitHubClientService {
       })),
       rawPayload: {
         pullRequest: prPayload,
+        files: filePayloads.map((file) => ({
+          filePath: file.filename,
+          previousFilePath: file.previous_filename,
+          status: file.status === "changed" ? "modified" : file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: file.patch,
+        })),
       },
       createdAt: prPayload.created_at,
       updatedAt: prPayload.updated_at,

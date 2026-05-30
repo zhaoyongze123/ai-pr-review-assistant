@@ -38,19 +38,21 @@ export function createContextFetchPlan(
   requestInput: ContextRequest,
   budgetInput: ContextBudget,
 ): ContextFetchResult {
-  const request = ContextRequestSchema.parse(requestInput);
+  const request = normalizeContextRequest(
+    ContextRequestSchema.parse(requestInput),
+  );
   const budget = ContextBudgetSchema.parse(budgetInput);
-  const plannedCalls: PlannedToolCall[] = [];
+  const requestedCalls: PlannedToolCall[] = [];
 
-  appendToolCalls("find_symbol_definition", request.symbols, plannedCalls);
-  appendToolCalls("read_file_snippet", request.files, plannedCalls);
-  appendToolCalls("find_callers", request.callersOf, plannedCalls);
-  appendToolCalls("find_callees", request.calleesOf, plannedCalls);
-  appendToolCalls("find_related_tests", request.tests, plannedCalls);
+  appendToolCalls("find_symbol_definition", request.symbols, requestedCalls);
+  appendToolCalls("read_file_snippet", request.files, requestedCalls);
+  appendToolCalls("find_callers", request.callersOf, requestedCalls);
+  appendToolCalls("find_callees", request.calleesOf, requestedCalls);
+  appendToolCalls("find_related_tests", request.tests, requestedCalls);
   appendToolCalls(
     "find_schema_or_migration",
     request.schemaTargets,
-    plannedCalls,
+    requestedCalls,
   );
 
   if (
@@ -60,11 +62,11 @@ export function createContextFetchPlan(
     appendToolCalls(
       "read_config_or_feature_flag",
       [request.reason],
-      plannedCalls,
+      requestedCalls,
     );
   }
 
-  if (plannedCalls.length === 0) {
+  if (requestedCalls.length === 0) {
     return ContextFetchResultSchema.parse({
       status: "skipped",
       reason: "没有请求任何可执行的上下文检索项",
@@ -74,23 +76,35 @@ export function createContextFetchPlan(
     });
   }
 
-  const nextToolCalls = budget.usedToolCalls + plannedCalls.length;
-  const nextFiles =
-    budget.usedExtraFiles +
-    plannedCalls.reduce((sum, call) => sum + call.estimatedFiles, 0);
-  const nextTokens =
-    budget.usedExtraTokens +
-    plannedCalls.reduce((sum, call) => sum + call.estimatedTokens, 0);
+  const selectedCalls: PlannedToolCall[] = [];
+  let nextToolCalls = budget.usedToolCalls;
+  let nextFiles = budget.usedExtraFiles;
+  let nextTokens = budget.usedExtraTokens;
 
-  if (
-    nextToolCalls > budget.maxToolCalls ||
-    nextFiles > budget.maxExtraFiles ||
-    nextTokens > budget.maxExtraTokens
-  ) {
+  for (const call of requestedCalls) {
+    const candidateToolCalls = nextToolCalls + 1;
+    const candidateFiles = nextFiles + call.estimatedFiles;
+    const candidateTokens = nextTokens + call.estimatedTokens;
+
+    if (
+      candidateToolCalls > budget.maxToolCalls ||
+      candidateFiles > budget.maxExtraFiles ||
+      candidateTokens > budget.maxExtraTokens
+    ) {
+      continue;
+    }
+
+    selectedCalls.push(call);
+    nextToolCalls = candidateToolCalls;
+    nextFiles = candidateFiles;
+    nextTokens = candidateTokens;
+  }
+
+  if (selectedCalls.length === 0) {
     return ContextFetchResultSchema.parse({
       status: "budget_exceeded",
       reason: "上下文检索计划超过预算，不继续扩张上下文",
-      plannedCalls,
+      plannedCalls: requestedCalls,
       artifacts: [],
       remainingBudget: budget,
     });
@@ -98,8 +112,11 @@ export function createContextFetchPlan(
 
   return ContextFetchResultSchema.parse({
     status: "planned",
-    reason: "上下文检索计划已生成，可交由 Context Fetcher 执行",
-    plannedCalls,
+    reason:
+      selectedCalls.length === requestedCalls.length
+        ? "上下文检索计划已生成，可交由 Context Fetcher 执行"
+        : "上下文检索计划已按预算裁剪，仅保留最高优先级的证据检索项",
+    plannedCalls: selectedCalls,
     artifacts: [],
     remainingBudget: {
       ...budget,
@@ -109,4 +126,33 @@ export function createContextFetchPlan(
       usedRounds: budget.usedRounds + 1,
     },
   });
+}
+
+function normalizeContextRequest(request: ContextRequest): ContextRequest {
+  return {
+    ...request,
+    symbols: normalizeRequestItems(request.symbols, 2),
+    files: normalizeRequestItems(request.files, 2),
+    callersOf: normalizeRequestItems(request.callersOf, 1),
+    calleesOf: normalizeRequestItems(request.calleesOf, 1),
+    tests: normalizeRequestItems(request.tests, 1),
+    schemaTargets: normalizeRequestItems(request.schemaTargets, 1),
+  };
+}
+
+function normalizeRequestItems(values: string[], limit: number): string[] {
+  const unique = new Set<string>();
+
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) {
+      continue;
+    }
+    unique.add(normalized);
+    if (unique.size >= limit) {
+      break;
+    }
+  }
+
+  return Array.from(unique);
 }

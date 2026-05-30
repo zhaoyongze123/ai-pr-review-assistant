@@ -66,21 +66,21 @@
 
 ## 4. 模块摘要表
 
-| 模块 | 名称                    | 主要产出                               | 依赖           | LangSmith              |
-| ---- | ----------------------- | -------------------------------------- | -------------- | ---------------------- |
-| M0   | 契约与持久化真源        | schema、DDL、fixtures                  | 无             | 不接                   |
-| M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                   |
-| M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                   |
-| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源     |
-| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 已完成，当前不接       |
-| M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                   |
-| M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制       |
-| M7   | 首轮审查与 Triage       | first-pass review、triage decision     | M0, M5, M6     | 需要 trace             |
-| M8   | 上下文检索与二轮审查    | context fetch、second-pass review      | M0, M3, M4, M7 | 需要 trace             |
-| M9   | 评论准入与结果聚合      | comments、summary、merge suggestion    | M0, M7, M8     | 需要 trace 与评估样本  |
-| M10  | API 查询面与 Web 工作台 | review job query、diff viewer、联动 UI | M0, M5, M9     | 不直接依赖             |
-| M11  | GitHub 回写             | inline review comments 回写            | M0, M9         | 可记录结果，不做主依赖 |
-| M12  | Observability 与评估    | tracing、dataset、evaluation           | M7, M8, M9     | 主模块                 |
+| 模块 | 名称                    | 主要产出                               | 依赖           | LangSmith                   |
+| ---- | ----------------------- | -------------------------------------- | -------------- | --------------------------- |
+| M0   | 契约与持久化真源        | schema、DDL、fixtures                  | 无             | 不接                        |
+| M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                        |
+| M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                        |
+| M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源          |
+| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 已完成，当前不接            |
+| M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                        |
+| M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制            |
+| M7   | 首轮审查与 Triage       | first-pass review、triage decision     | M0, M5, M6     | 需要 trace                  |
+| M8   | 上下文检索与二轮审查    | context fetch、second-pass review      | M0, M3, M4, M7 | 已完成真实验收              |
+| M9   | 评论准入与结果聚合      | comments、summary、merge suggestion    | M0, M7, M8     | 需要 trace 与评估样本       |
+| M10  | API 查询面与 Web 工作台 | review job query、diff viewer、联动 UI | M0, M5, M9     | 不直接依赖                  |
+| M11  | GitHub 回写             | inline review comments 回写            | M0, M9         | 可记录结果，不做主依赖      |
+| M12  | Observability 与评估    | tracing、dataset、evaluation           | M7, M8, M9     | 部分完成，待补 gate/dataset |
 
 ## 5. 模块详细计划
 
@@ -376,16 +376,14 @@
 
 ### 当前状态
 
-已完成基础版：
+已完成：
 
 - 新增 `packages/diff-core`，可把 GitHub file patch 解析为 `DiffHunk[]`。
 - `DiffParseResult` 已补 `lineRefMap`，支持 `diffLineRef -> old/new line -> hunkId` 映射。
 - `GitHubClientService` 已支持拉取 PR 元信息与 PR files patch。
+- `pull_requests` 已接入 `PullRequestStoreService` 落库，并保留文件快照供后续审查复用。
 - 已补 patch 为空文件的兜底逻辑、diff fixture 和验证脚本。
-
-当前限制：
-
-- `pull_requests` 落库尚未接入 store，后续在 review job 编排模块统一写入。
+- 已通过真实 smoke：可对真实 GitHub PR 完成 `PR 拉取 -> diff 解析 -> pull_requests 落库`。
 
 ### 代码落点
 
@@ -414,6 +412,12 @@
 - `DiffParseResult` 能解析出 hunk、行引用和 `lineRefMap`。
 - 后续评论可以稳定锚定到具体 diff 行，不靠裸行号。
 
+### 当前落地结果
+
+- `apps/api/src/modules/repositories/github-client.service.ts` 已完成真实 PR 元信息与文件 patch 拉取。
+- `apps/api/src/modules/reviews/pull-request-store.service.ts` 已完成 `pull_requests` 表 upsert。
+- `apps/api/src/modules/reviews/first-pass-review.integration.ts` 已对真实 PR 验证 `pull_requests` 落库。
+
 ### LangSmith
 
 - 不接。
@@ -427,17 +431,15 @@
 
 ### 当前状态
 
-已完成基础版：
+已完成：
 
 - `services/rule-engine` 新增 `/scan`，包装 semgrep 与 eslint 执行入口。
 - 规则执行支持超时和失败兜底，单个引擎失败时返回 failures，不阻断整体响应。
 - `packages/review-core` 新增 `normalizeRuleViolations`，把 semgrep/eslint 原始结果标准化为 `RuleViolation`。
 - Worker 首轮审查输入已接收 `RuleViolation[]`。
-
-当前限制：
-
-- repo/module 级规则配置入口尚未落地。
-- 本地环境未必安装 semgrep，真实命中数量依赖运行环境。
+- 已支持 repo/module 级规则配置入口：`semgrepConfigs`、`moduleRuleConfigs`。
+- 已支持 `files` 模式扫描，便于无仓库 clone 的独立验证。
+- 已通过真实 smoke：本地 sidecar 可命中自定义 `moduleRuleConfigs` 规则。
 
 ### 代码落点
 
@@ -458,6 +460,11 @@
 - 规则结果能转成统一 `RuleViolationSchema`。
 - Review Pipeline 可以消费规则结果，不再只依赖 LLM。
 
+### 当前落地结果
+
+- `services/rule-engine/app.py` 已支持 `RULE_ENGINE_PORT`、venv 下 semgrep 查找、规则 ID 归一化与 `--no-rewrite-rule-ids`。
+- `apps/api/src/modules/reviews/rule-engine.integration.ts` 已验证 `moduleRuleConfigs` 可以真实命中规则。
+
 ### LangSmith
 
 - 可选记录。
@@ -471,25 +478,34 @@
 
 ### 当前状态
 
-已完成基础版：
+已完成：
 
-- `packages/review-core`
-  - `evaluateReviewTriage`
-- `apps/worker`
-  - `runFirstPassReviewPipeline`
-
-当前实现：
-
+- 新增 `packages/prompt-builder`，按 diff 行锚点渲染首轮 triage prompt。
+- 新增 `packages/llm-gateway`，对接 OpenAI 兼容 `/v1/chat/completions` 并解析结构化 `ReviewTriageDecision`。
+- `apps/api/src/modules/reviews/first-pass-review.service.ts` 已完成首轮编排：
+  - GitHub PR 拉取
+  - `pull_requests` upsert
+  - `review_jobs` 创建/完成/失败流转
+  - 仓库临时 clone
+  - rule-engine 扫描
+  - prompt-builder 组 prompt
+  - llm-gateway 调用真实模型
+  - `file_reviews` 落库
+  - `llm_call_logs` 落库
 - 首轮输入包含 diff、PR file 和规则结果。
-- 先用启发式 first-pass reviewer 生成结构化 `ReviewTriageDecision`，避免在 LLM gateway 未落地前阻塞主链路。
 - 高风险规则命中会输出 `need_more_context` 并保留 provisional findings。
 - 无规则证据时优先输出 `insufficient_evidence` 或 `no_issue`，不硬造最终评论。
+- `rule-engine` 已切换为本地 Python 进程开发模式，不再通过 Docker Compose 构建代码服务。
+- 已通过真实 smoke：本地 `rule-engine` + `POST /api/review-tools/first-pass` + 真实 `gpt-5.4` 可完成文件级 triage，并验证 `pull_requests`、`review_jobs`、`file_reviews`、`llm_call_logs` 四张表落库。
 
-当前限制：
+当前说明：
 
-- `packages/prompt-builder`、`packages/llm-gateway` 尚未拆包。
-- LangSmith trace 尚未接入，本次仅保留 first-pass 输入输出边界。
-- `file_reviews.triage_decision` 落库将在 review job 持久化模块接入。
+- LangSmith 已完成真实平台验收，当前可在 LangSmith 中看到：
+  - `review-job` 根 trace
+  - `rule-engine-scan` tool trace
+  - `review-file` chain trace
+  - `first-pass-review` llm trace
+- 首轮链路里的 `context-fetch-plan` trace 已具备独立验证脚本，但由于真实 PR 本轮没有触发 `need_more_context` 落库分支，所以主链路里尚未形成稳定的 `context-fetch-plan` 真实样本；这一点继续放在 M8 / M12 补齐。
 
 ### 代码落点
 
@@ -520,9 +536,20 @@
 - 对“高风险但证据不足”的场景能稳定输出 `need_more_context`。
 - 不会在证据不足时强行给出大量最终评论。
 
+### 当前落地结果
+
+- `apps/api/src/modules/reviews/first-pass-review.integration.ts` 已完成真实链路 smoke，并校验数据库落库结果。
+- 已补充 `first-pass-review.need-more-context.json`、`first-pass-review.no-issue.json`、`first-pass-review.insufficient-evidence.json`。
+- `LangsmithTraceService` 已落入主链路，trace 失败不会阻断审查任务。
+- 已新增 `apps/api/src/modules/reviews/langsmith-trace.integration.ts`，可独立验证完整父子 trace 树。
+- 已用真实 LangSmith key 验证成功：
+  - 手工树 smoke 可查到 `review-job -> rule-engine-scan -> review-file -> first-pass-review / context-fetch-plan`
+  - 真实 first-pass smoke 可查到 `review-job -> rule-engine-scan -> review-file -> first-pass-review`
+- 为降低误报和脏 trace，`packages/llm-gateway` 已补空 `contextRequest.reason` 自动回填逻辑；修复后真实 smoke 中成功 `first-pass-review` run 从 `2` 提升到 `14`。
+
 ### LangSmith
 
-- 需要接。
+- 已接入非阻断 trace hook。
 
 接入点：
 
@@ -544,6 +571,11 @@
 - 看首轮模型到底在哪类改动上开始偏航
 - 后续做 triage prompt 回归
 
+本阶段说明：
+
+- 本模块已完成首轮链路 tracing 的真实平台验收。
+- dataset、评估脚本、脱敏策略和更深的二轮审查 trace 仍放在 M12。
+
 ## M8. 上下文检索与二轮审查
 
 ### 目标
@@ -552,11 +584,13 @@
 
 ### 当前状态
 
-已有骨架：
+已完成：
 
-- `createContextFetchPlan`
-- `ContextBudget`
-- `ContextFetchResult`
+- `createContextFetchPlan` 已支持按预算裁剪，而不是超预算整轮失败
+- `ContextFetcherService.execute` 已能基于结构化索引和语义检索返回真实 artifact
+- `second-pass prompt`、`LLM gateway`、`context_fetch_logs` 已接入主审查链路
+- 真实 smoke 已验收 `completed` 状态的 `context fetch`
+- LangSmith smoke 已验收 `second-pass-review` trace
 
 ### 代码落点
 
@@ -809,6 +843,23 @@
    - context retrieval dataset
    - admission / quality dataset
 7. 建评估脚本，支持回归比较 prompt 版本。
+
+### 当前状态
+
+已部分完成：
+
+- `apps/api/src/modules/reviews/langsmith-trace.service.ts` 已落地非阻断 `RunTree` 封装。
+- `packages/llm-gateway/src/index.ts` 已切换到 `traceable(fetch)`，不依赖 OpenAI SDK wrapper。
+- 已新增 `apps/api/src/modules/reviews/langsmith-trace.integration.ts` 作为真实 LangSmith 树状 smoke。
+- 已完成真实验收：
+  - 手工树 trace 可见 `review-job -> rule-engine-scan -> review-file -> first-pass-review -> context-fetch-plan -> context-fetch-summary -> second-pass-review`
+  - 真实 first-pass smoke 可见 `completed` 状态的 `context fetch` 落库
+
+仍未完成：
+
+- M9 gate / quality 的 trace 还没有全部接完
+- dataset、评估脚本、脱敏策略还没落地
+- `packages/observability` 这一层抽象还没独立拆出
 
 ### 验收标准
 

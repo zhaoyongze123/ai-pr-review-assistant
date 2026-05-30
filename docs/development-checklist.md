@@ -21,21 +21,21 @@
 
 ## 2. 模块执行清单总览
 
-| 模块                                    | 状态                   | 前置依赖       | 建议优先级 |
-| --------------------------------------- | ---------------------- | -------------- | ---------- |
-| M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
-| M1 仓库接入与 GitHub 认证               | 已完成                 | M0             | 已完成     |
-| M2 仓库扫描任务编排                     | 已完成                 | M0, M1         | 已完成     |
-| M3 结构化索引构建                       | 已完成                 | M0, M2         | 已完成     |
-| M4 语义语料构建与检索                   | 已完成                 | M0, M2         | 已完成     |
-| M5 PR 拉取与 Diff Core                  | 已完成基础版           | M0, M1         | P0         |
-| M6 规则引擎接入                         | 已完成基础版           | M0, M5         | P1         |
-| M7 首轮审查与 Triage                    | 已完成基础版           | M0, M5, M6     | P1         |
-| M8 上下文检索与二轮审查                 | 部分有骨架             | M0, M3, M4, M7 | P1         |
-| M9 评论准入、质量评分与聚合             | 部分有骨架             | M0, M7, M8     | P1         |
-| M10 API 查询面与 Web 工作台             | 待开发                 | M0, M5, M9     | P2         |
-| M11 GitHub 回写                         | 待开发                 | M0, M9         | P2         |
-| M12 Observability、LangSmith 与评估回归 | 待开发                 | M7, M8, M9     | P2         |
+| 模块                                    | 状态                                 | 前置依赖       | 建议优先级 |
+| --------------------------------------- | ------------------------------------ | -------------- | ---------- |
+| M0 契约与持久化真源                     | 已完成基础版，持续维护               | 无             | 已完成     |
+| M1 仓库接入与 GitHub 认证               | 已完成                               | M0             | 已完成     |
+| M2 仓库扫描任务编排                     | 已完成                               | M0, M1         | 已完成     |
+| M3 结构化索引构建                       | 已完成                               | M0, M2         | 已完成     |
+| M4 语义语料构建与检索                   | 已完成                               | M0, M2         | 已完成     |
+| M5 PR 拉取与 Diff Core                  | 已完成                               | M0, M1         | P0         |
+| M6 规则引擎接入                         | 已完成                               | M0, M5         | P1         |
+| M7 首轮审查与 Triage                    | 已完成                               | M0, M5, M6     | P1         |
+| M8 上下文检索与二轮审查                 | 已完成                               | M0, M3, M4, M7 | 已完成     |
+| M9 评论准入、质量评分与聚合             | 部分有骨架                           | M0, M7, M8     | P1         |
+| M10 API 查询面与 Web 工作台             | 待开发                               | M0, M5, M9     | P2         |
+| M11 GitHub 回写                         | 待开发                               | M0, M9         | P2         |
+| M12 Observability、LangSmith 与评估回归 | 部分完成，已验收到 second-pass trace | M7, M8, M9     | P2         |
 
 ## 3. 状态维护规则
 
@@ -236,7 +236,7 @@
 
 ### 当前判断
 
-基础版已完成：已提供 GitHub PR 元信息和文件 patch 拉取封装、`packages/diff-core` patch 解析、稳定 `diffLineRef` 和 `lineRefMap`，并补充 diff fixture 与验证脚本。
+已完成：已提供 GitHub PR 元信息和文件 patch 拉取封装、`packages/diff-core` patch 解析、稳定 `diffLineRef` 和 `lineRefMap`，并完成 `pull_requests` 落库与真实 smoke 验证。
 
 ### Issue 清单
 
@@ -244,7 +244,7 @@
 - [x] 设计 `DiffParseResult` 使用边界
 - [x] 封装 GitHub REST PR 元信息拉取
 - [x] 封装 GitHub REST 文件 patch 拉取
-- [ ] 写入 `pull_requests`
+- [x] 写入 `pull_requests`
 - [x] 解析 patch 为 `DiffHunk[]`
 - [x] 生成 `diffLineRef`
 - [x] 建 old/new 行号映射
@@ -261,6 +261,7 @@
 ### 模块完成定义
 
 - PR fetch 与 diff parse 可供 first-pass review 直接消费
+- `pull_requests` 已落库并可复用
 - 计划文档状态已同步
 
 ### LangSmith
@@ -271,7 +272,7 @@
 
 ### 当前判断
 
-基础版已完成：已提供 Python sidecar `/scan` 入口、semgrep/eslint 输出标准化逻辑、TS 侧 `RuleViolation` 标准化函数，并把规则结果纳入首轮 review pipeline 输入。
+已完成：已提供 Python sidecar `/scan` 入口、semgrep/eslint 输出标准化逻辑、TS 侧 `RuleViolation` 标准化函数，并把规则结果纳入首轮 review pipeline 输入；repo/module 级规则配置与真实规则命中 smoke 已补齐。
 
 ### Issue 清单
 
@@ -281,13 +282,13 @@
 - [x] 实现规则输出标准化
 - [x] 增加规则执行超时控制
 - [x] 增加规则执行失败兜底
-- [ ] 支持 repo/module 级规则配置入口
+- [x] 支持 repo/module 级规则配置入口
 - [x] 将规则结果并入 review pipeline 输入
 - [x] 补 rule result fixture
 
 ### 最小验证
 
-- [ ] 真实代码可跑出至少一条规则结果
+- [x] 真实代码可跑出至少一条规则结果
 - [x] 结果可 parse 为 `RuleViolationSchema`
 - [x] 规则失败不会阻断整个 review job
 
@@ -305,26 +306,28 @@
 
 ### 当前判断
 
-基础版已完成：已建立首轮审查输入对象、基于 diff 与规则命中的启发式 first-pass decision、`ReviewTriageDecision` 结构化输出，以及 worker pipeline 中的 triage evaluation 和 provisional findings 保留。
+已完成：已建立首轮审查输入对象、结构化 `ReviewTriageDecision` 输出、`packages/prompt-builder`、`packages/llm-gateway`、数据库落库和主链路联调。
+本轮已完成真实模块对接联调：本地 `rule-engine` 进程、`/api/review-tools/first-pass` 编排入口、真实 `gpt-5.4` 调用和数据库落库 smoke 已打通。
 
 ### Issue 清单
 
 - [x] 审查首轮 prompt 输入对象
-- [ ] 新建 `packages/prompt-builder`
-- [ ] 新建 `packages/llm-gateway`
+- [x] 新建 `packages/prompt-builder`
+- [x] 新建 `packages/llm-gateway`
 - [x] 实现 first-pass prompt 模板
 - [x] 约束模型输出 `ReviewTriageDecision`
 - [x] 在 Worker 中接入 first-pass review
 - [x] 在 Worker 中接入 triage evaluation
-- [ ] 将 triage 结果写入 `file_reviews`
+- [x] 将 triage 结果写入 `file_reviews`
 - [x] 保留 provisional findings
-- [ ] 补高风险 / 无问题 / 证据不足 3 类 fixture
+- [x] 补高风险 / 无问题 / 证据不足 3 类 fixture
 
 ### 最小验证
 
 - [x] 真实或 fixture PR 可返回结构化 triage 决策
 - [x] 高风险但证据不足场景返回 `need_more_context`
 - [x] 无问题场景不会硬造评论
+- [x] 真实 GitHub PR 可完成 `PR 拉取 -> diff 解析 -> semgrep -> triage -> file_reviews/llm_call_logs 落库` 联调 smoke
 
 ### 模块完成定义
 
@@ -333,33 +336,34 @@
 
 ### LangSmith
 
-- [ ] 为 first-pass review 增加 trace
-- [ ] 为 triage decision 增加 trace
-- [ ] trace metadata 带 `review_job_id`、`file_path`、`prompt_version`
+- [x] 为 first-pass review 增加 trace
+- [x] 为 triage decision 增加 trace
+- [x] trace metadata 带 `review_job_id`、`file_path`、`prompt_version`
+- [x] 使用真实 LangSmith key 做外部平台验收
 
 ## M8. 上下文检索与二轮审查
 
 ### Issue 清单
 
-- [ ] 审查 `ContextRequest` 和 `ContextBudget`
-- [ ] 在 Worker 中接入 `createContextFetchPlan`
-- [ ] 实现 definitions 检索
-- [ ] 实现 callers 检索
-- [ ] 实现 callees 检索
-- [ ] 实现 tests 检索
-- [ ] 实现 schema/config 检索
-- [ ] 必要时接入 semantic retrieval
-- [ ] 组装 second-pass context package
-- [ ] 设计 second-pass prompt
-- [ ] 返回 second-pass candidate comments
-- [ ] 写入 `context_fetch_logs`
-- [ ] 增加 budget exceeded 场景 fixture
+- [x] 审查 `ContextRequest` 和 `ContextBudget`
+- [x] 在共享主链路中接入 `createContextFetchPlan`
+- [x] 实现 definitions 检索
+- [x] 实现 callers 检索
+- [x] 实现 callees 检索
+- [x] 实现 tests 检索
+- [x] 实现 schema/config 检索
+- [x] 必要时接入 semantic retrieval
+- [x] 组装 second-pass context package
+- [x] 设计 second-pass prompt
+- [x] 返回 second-pass candidate comments
+- [x] 写入 `context_fetch_logs`
+- [x] 增加 budget exceeded 场景 fixture
 
 ### 最小验证
 
-- [ ] 二轮检索不会超预算失控
-- [ ] 能补到真实 caller/test 证据
-- [ ] second-pass 比 first-pass 更具体
+- [x] 二轮检索不会超预算失控
+- [x] 能补到真实 caller/test 证据
+- [x] second-pass 比 first-pass 更具体
 
 ### 模块完成定义
 
@@ -369,9 +373,15 @@
 
 ### LangSmith
 
-- [ ] trace context request
-- [ ] trace context fetch summary
-- [ ] trace second-pass review
+- [x] trace context request
+- [x] trace context fetch summary
+- [x] trace second-pass review
+
+### 验收说明
+
+- [x] 真实 first-pass smoke 已验收 `completed` 状态的 `context_fetch_logs`
+- [x] 真实 first-pass smoke 已验收 `file_reviews.context_round > 0`
+- [x] LangSmith smoke 已验收 `second-pass-review` trace 节点
 
 ## M9. 评论准入、质量评分与结果聚合
 
@@ -467,6 +477,14 @@
 
 ## M12. Observability、LangSmith 与评估回归
 
+### 当前判断
+
+当前为部分完成：
+
+- 首轮链路已接入并验收 `review-job -> rule-engine-scan -> review-file -> first-pass-review`
+- 已验收 `review-job -> review-file -> context-fetch-plan -> context-fetch-summary -> second-pass-review`
+- dataset、评估脚本、M9 gate/quality trace 仍未完成
+
 ### Issue 清单
 
 - [ ] 新建 `packages/observability`
@@ -479,7 +497,7 @@
 - [ ] 在 Worker 中接 second-pass trace
 - [ ] 在 Worker 中接 admission trace
 - [ ] 在 Worker 中接 quality trace
-- [ ] 增加 LangSmith 环境变量
+- [x] 增加 LangSmith 环境变量
 - [ ] 增加脱敏策略
 - [ ] 增加 triage dataset
 - [ ] 增加 admission dataset
@@ -488,8 +506,8 @@
 
 ### 最小验证
 
-- [ ] 关闭 LangSmith 时系统照常运行
-- [ ] 打开 LangSmith 时可看到 file-review 级 trace
+- [x] 关闭 LangSmith 时系统照常运行
+- [x] 打开 LangSmith 时可看到 file-review 级 trace
 - [ ] trace 中能区分 first-pass / context fetch / second-pass / gate / score
 - [ ] 至少一套 dataset 和一套回归评估可运行
 

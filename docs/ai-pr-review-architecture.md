@@ -15,7 +15,7 @@
 范围约束：
 
 - 只覆盖本地开发与联调。
-- 运行环境限定为 `Docker Compose`。
+- 基础设施通过 `Docker Compose` 管理，代码服务使用本地进程运行。
 - 目标平台为 `GitHub Pull Request Review`。
 - 一期优先保证 `TypeScript / JavaScript` 仓库体验最佳。
 - 一期允许“任意仓库可接入”，但不承诺所有语言都具备同等深度的语义理解。
@@ -791,7 +791,7 @@ PR 元信息。
 - `postgres`：`pgvector/pgvector:pg16`，宿主机端口 `55432`
 - `redis`：`redis:7-alpine`，宿主机端口 `56379`
 - `minio`：`minio/minio`，宿主机端口 `59000/59001`
-- `rule-engine`：`python:3.14-slim`，宿主机端口 `58001`
+- `rule-engine`：本地 Python 进程，监听 `58001`，不进入 Docker Compose
 
 ### 13.2 建议的本地运行职责
 

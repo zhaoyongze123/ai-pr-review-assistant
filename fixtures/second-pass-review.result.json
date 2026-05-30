@@ -1,0 +1,22 @@
+{
+  "decision": "final_review",
+  "confidence": 0.84,
+  "rationale": "结合调用方与测试证据，可以确认这条评论对开发者有明确修复价值。",
+  "candidateComments": [
+    {
+      "diffLineRef": "src/auth.ts#H1:L2+",
+      "lineRefs": ["src/auth.ts#H1:L2+"],
+      "severity": "HIGH",
+      "category": "security",
+      "title": "返回原始 token 会绕过上层 session 约束",
+      "message": "当前改动直接返回 token 值，但调用方仍可能假设 session guard 已经完成，导致未授权分支被误判为可继续执行。",
+      "suggestion": "统一让调用方通过 session 校验结果驱动后续流程，不要把原始 token 作为成功信号直接透传。",
+      "confidence": 0.82,
+      "evidenceRefs": [
+        "diff:src/auth.ts#H1:L2+",
+        "context:find_callers:src/auth.test.ts#AuthController.login"
+      ],
+      "duplicateFingerprint": "auth-token-raw-return-callers"
+    }
+  ]
+}

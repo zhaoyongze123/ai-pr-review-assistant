@@ -29,15 +29,6 @@ services:
     volumes:
       - minio_data:/data
 
-  rule-engine:
-    image: python:3.14-slim
-    working_dir: /app
-    command: python app.py
-    ports:
-      - "58001:8001"
-    volumes:
-      - ../services/rule-engine:/app
-
 volumes:
   postgres_data:
   redis_data:

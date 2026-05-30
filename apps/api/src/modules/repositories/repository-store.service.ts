@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
-import type { Repository } from "@ai-pr-review/shared-types";
+import type { Repository, RepositoryRef } from "@ai-pr-review/shared-types";
 import { Pool } from "pg";
 import { RepositorySchema } from "@ai-pr-review/shared-types";
 import { ApiConfigService } from "./api-config.service.js";
@@ -132,6 +132,56 @@ export class RepositoryStoreService implements OnModuleDestroy {
       throw new ApiModuleError(
         "DATABASE_ERROR",
         "查询 repositories 表失败",
+        500,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  async findByRef(reference: RepositoryRef): Promise<Repository | null> {
+    try {
+      const result = await this.pool.query<RepositoryRow>(
+        `
+          select
+            id,
+            provider,
+            owner,
+            repo,
+            default_branch,
+            clone_url,
+            is_active,
+            created_at,
+            updated_at
+          from repositories
+          where provider = $1
+            and owner = $2
+            and repo = $3
+          limit 1
+        `,
+        [reference.provider, reference.owner, reference.repo],
+      );
+
+      if (!result.rowCount || !result.rows[0]) {
+        return null;
+      }
+
+      return RepositorySchema.parse({
+        id: result.rows[0].id,
+        provider: result.rows[0].provider,
+        owner: result.rows[0].owner,
+        repo: result.rows[0].repo,
+        defaultBranch: result.rows[0].default_branch,
+        cloneUrl: result.rows[0].clone_url,
+        isActive: result.rows[0].is_active,
+        createdAt: result.rows[0].created_at.toISOString(),
+        updatedAt: result.rows[0].updated_at.toISOString(),
+      });
+    } catch (error) {
+      throw new ApiModuleError(
+        "DATABASE_ERROR",
+        "按仓库坐标查询 repositories 表失败",
         500,
         {
           message: error instanceof Error ? error.message : String(error),
