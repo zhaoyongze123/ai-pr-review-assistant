@@ -1,0 +1,25 @@
+{
+  "repositoryId": "11111111-1111-1111-1111-111111111111",
+  "query": "architecture design review pipeline",
+  "results": [
+    {
+      "document": {
+        "repositoryId": "11111111-1111-1111-1111-111111111111",
+        "scanId": "22222222-2222-2222-2222-222222222222",
+        "sourcePath": "docs/ai-pr-review-architecture.md",
+        "documentType": "doc",
+        "chunkIndex": 0,
+        "title": "AI PR Review 架构设计",
+        "moduleName": "docs",
+        "content": "系统围绕 Repository Intelligence、Dynamic Context Retrieval 和 Quality Gates 构建。",
+        "tags": ["auth", "database"],
+        "metadata": {
+          "heading": "架构总览",
+          "charLength": 62,
+          "sourceKind": "semantic_document"
+        }
+      },
+      "score": 0.84
+    }
+  ]
+}

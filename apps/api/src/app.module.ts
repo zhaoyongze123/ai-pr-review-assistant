@@ -8,6 +8,9 @@ import { RepositoryConnectService } from "./modules/repositories/repository-conn
 import { RepositoryStoreService } from "./modules/repositories/repository-store.service.js";
 import { CommentAdmissionGateService } from "./modules/quality-gates/comment-admission-gate.service.js";
 import { QualityScoringService } from "./modules/quality-gates/quality-scoring.service.js";
+import { SemanticRetrievalController } from "./modules/retrieval/semantic-retrieval.controller.js";
+import { SemanticRetrievalService } from "./modules/retrieval/semantic-retrieval.service.js";
+import { SemanticRetrievalStoreService } from "./modules/retrieval/semantic-retrieval-store.service.js";
 import { RepositoryScanEventStoreService } from "./modules/scans/repository-scan-event-store.service.js";
 import { RepositoryScanQueueService } from "./modules/scans/repository-scan-queue.service.js";
 import { RepositoryScanService } from "./modules/scans/repository-scan.service.js";
@@ -22,6 +25,7 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
     ReviewToolsController,
     RepositoriesController,
     RepositoryScansController,
+    SemanticRetrievalController,
   ],
   providers: [
     ApiConfigService,
@@ -30,6 +34,8 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
     GitHubClientService,
     QualityScoringService,
     RepositoryConnectService,
+    SemanticRetrievalService,
+    SemanticRetrievalStoreService,
     RepositoryScanEventStoreService,
     RepositoryScanQueueService,
     RepositoryScanService,

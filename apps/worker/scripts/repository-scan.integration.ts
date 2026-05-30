@@ -5,6 +5,7 @@ import {
   RepositoryConnectResponseSchema,
   RepositoryScanStatusResponseSchema,
   RepositoryScanTriggerResponseSchema,
+  SemanticSearchResponseSchema,
 } from "@ai-pr-review/shared-types";
 import { createRepositoryScanWorker } from "../src/repository-scan-worker.js";
 
@@ -210,6 +211,37 @@ async function main() {
     [activeScanId],
   );
   assert.ok(Number(riskTagResult.rows[0]?.count ?? "0") >= 1);
+
+  const semanticResult = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from semantic_documents
+      where scan_id = $1
+    `,
+    [activeScanId],
+  );
+  assert.ok(Number(semanticResult.rows[0]?.count ?? "0") >= 1);
+
+  const retrievalResponse = await fetch(
+    `http://127.0.0.1:${port}/api/repositories/${repositoryId}/retrieval/search`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: "architecture design review pipeline",
+        limit: 3,
+      }),
+    },
+  );
+  assert.equal(retrievalResponse.status, 200);
+  const retrievalPayload = SemanticSearchResponseSchema.parse(
+    await retrievalResponse.json(),
+  );
+  assert.ok(retrievalPayload.results.length >= 1);
+  assert.ok(retrievalPayload.results[0]?.document.sourcePath.length);
+  assert.ok(retrievalPayload.results[0]?.score > 0);
 
   await pool.end();
   await app.close();

@@ -26,8 +26,8 @@
 | M0 契约与持久化真源                     | 已完成基础版，持续维护 | 无             | 已完成     |
 | M1 仓库接入与 GitHub 认证               | 已完成                 | M0             | 已完成     |
 | M2 仓库扫描任务编排                     | 已完成                 | M0, M1         | 已完成     |
-| M3 结构化索引构建                       | 开发中，最小链路已完成 | M0, M2         | P0         |
-| M4 语义语料构建与检索                   | 待开发                 | M0, M2         | P1         |
+| M3 结构化索引构建                       | 已完成                 | M0, M2         | 已完成     |
+| M4 语义语料构建与检索                   | 已完成                 | M0, M2         | 已完成     |
 | M5 PR 拉取与 Diff Core                  | 已完成基础版           | M0, M1         | P0         |
 | M6 规则引擎接入                         | 已完成基础版           | M0, M5         | P1         |
 | M7 首轮审查与 Triage                    | 已完成基础版           | M0, M5, M6     | P1         |
@@ -198,24 +198,28 @@
 
 ## M4. 语义语料构建与检索
 
+### 当前判断
+
+已完成，当前剩余项仅为后续增强，不影响模块闭环。
+
 ### Issue 清单
 
-- [ ] 新建 `packages/retrieval-core`
-- [ ] 明确文档扫描范围
-- [ ] 设计 chunk 规则
-- [ ] 增加 heading / module / tags metadata
-- [ ] 接入 embedding 生成逻辑
-- [ ] 写入 `semantic_documents`
-- [ ] 实现按 repo/module/documentType 过滤
-- [ ] 实现按 query 召回
-- [ ] 增加与结构化索引的边界注释和测试
-- [ ] 补 retrieval fixture
+- [x] 新建 `packages/retrieval-core`
+- [x] 明确文档扫描范围
+- [x] 设计 chunk 规则
+- [x] 增加 heading / module / tags metadata
+- [x] 接入 embedding 生成逻辑
+- [x] 写入 `semantic_documents`
+- [x] 实现按 repo/module/documentType 过滤
+- [x] 实现按 query 召回
+- [x] 增加与结构化索引的边界注释和测试
+- [x] 补 retrieval fixture
 
 ### 最小验证
 
-- [ ] 可召回 README/docs 中与 auth 或 payment 相关的文档块
-- [ ] 结果可以按模块过滤
-- [ ] 不把源码正文作为主要召回内容
+- [x] 可召回 README/docs 中与 auth 或 payment 相关的文档块
+- [x] 结果可以按模块过滤
+- [x] 不把源码正文作为主要召回内容
 
 ### 模块完成定义
 

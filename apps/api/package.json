@@ -12,6 +12,7 @@
     "smoke:repository-connect": "tsx src/modules/repositories/repository-connect.integration.ts"
   },
   "dependencies": {
+    "@ai-pr-review/retrieval-core": "0.1.0",
     "@ai-pr-review/review-core": "0.1.0",
     "@ai-pr-review/shared-types": "0.1.0",
     "@nestjs/common": "^11.1.24",

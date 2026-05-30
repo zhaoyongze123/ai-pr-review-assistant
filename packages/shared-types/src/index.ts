@@ -403,6 +403,29 @@ export const SemanticDocumentSchema = z.object({
 });
 export type SemanticDocument = z.infer<typeof SemanticDocumentSchema>;
 
+export const SemanticSearchResultSchema = z.object({
+  document: SemanticDocumentSchema,
+  score: z.number(),
+});
+export type SemanticSearchResult = z.infer<typeof SemanticSearchResultSchema>;
+
+export const SemanticSearchRequestSchema = z.object({
+  query: NonEmptyStringSchema,
+  moduleName: NonEmptyStringSchema.optional(),
+  documentTypes: z.array(SemanticDocumentTypeSchema).default([]),
+  limit: z.number().int().positive().max(20).default(5),
+});
+export type SemanticSearchRequest = z.infer<typeof SemanticSearchRequestSchema>;
+
+export const SemanticSearchResponseSchema = z.object({
+  repositoryId: UuidSchema,
+  query: NonEmptyStringSchema,
+  results: z.array(SemanticSearchResultSchema).default([]),
+});
+export type SemanticSearchResponse = z.infer<
+  typeof SemanticSearchResponseSchema
+>;
+
 export const RepositorySemanticMapSchema = z.object({
   repository: RepositorySchema,
   latestScan: RepositoryScanSchema,

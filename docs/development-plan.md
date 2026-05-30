@@ -72,7 +72,7 @@
 | M1   | 仓库接入与 GitHub 认证  | repository connect API                 | M0             | 不接                   |
 | M2   | 仓库扫描任务编排        | scan job、队列、状态流                 | M0, M1         | 不接                   |
 | M3   | 结构化索引构建          | files、symbols、edges                  | M0, M2         | 不接，保持本地真源     |
-| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 可选，不必先接         |
+| M4   | 语义语料构建与检索      | semantic documents、retrieval API      | M0, M2         | 已完成，当前不接       |
 | M5   | PR 拉取与 Diff Core     | pull request、diff parse、line refs    | M0, M1         | 不接                   |
 | M6   | 规则引擎接入            | semgrep/eslint 结果标准化              | M0, M5         | 可选记录，不强制       |
 | M7   | 首轮审查与 Triage       | first-pass review、triage decision     | M0, M5, M6     | 需要 trace             |
@@ -219,7 +219,7 @@
 
 ### 当前状态
 
-开发中，已完成当前最小可运行链路：
+已完成：
 
 - 新建 `packages/repo-intelligence`
 - 接入 TS/JS 结构化索引提取
@@ -297,6 +297,39 @@
 ### 目标
 
 构建辅助语义层，只服务文档背景和模块职责检索，不碰代码事实主判断。
+
+### 当前状态
+
+已完成：
+
+- 新建 `packages/retrieval-core`
+- 扫描 README / docs / ADR 等 Markdown 语料
+- 生成 heading / module / tags metadata
+- 生成本地 embedding 并写入 `semantic_documents`
+- 新增最小语义检索接口 `POST /api/repositories/:id/retrieval/search`
+- 已补真实 smoke，验证扫描后可召回文档块
+
+当前真实验证结果：
+
+- 已在真实仓库 `zhaoyongze123/ai-pr-review-assistant` 写入 `semantic_documents`
+- 扫描完成后可通过 API 检索出与 query 相关的 README / docs chunk
+- 结果可按 limit 返回并带 score
+
+当前验收结论：
+
+- 已满足：
+  - 文档扫描、chunk、metadata、embedding、落库已可运行
+  - 语义检索已可按 query / module / documentType 检索
+  - 检索结果以 README / docs 为主，不依赖源码正文
+- 后续增强：
+  - 可替换为外部 embedding provider
+  - 可继续优化召回排序策略
+
+与原计划差异：
+
+- 当前 embedding 采用本地哈希向量实现，先保证检索主链路可跑
+- repo / module / documentType 精细过滤已在契约中保留，当前先完成最小查询面
+- 暂未接入外部 embedding provider，也未接 LangSmith
 
 ### 代码落点
 
