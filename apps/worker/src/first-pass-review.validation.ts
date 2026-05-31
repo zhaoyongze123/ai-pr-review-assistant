@@ -346,3 +346,106 @@ const downgradedSecondPass = calibrateSecondPassResult({
 
 assert.equal(downgradedSecondPass.decision, "insufficient_evidence");
 assert.equal(downgradedSecondPass.candidateComments.length, 0);
+
+const authContractDiff: DiffParseResult = {
+  filePath: "src/controller/auth.controller.ts",
+  language: "TypeScript",
+  totalAddedLines: 5,
+  totalRemovedLines: 2,
+  lineRefMap: {
+    "src/controller/auth.controller.ts#H1:L88-": {
+      hunkId: "src/controller/auth.controller.ts#H1",
+      lineType: "remove",
+      oldLineNumber: 88,
+    },
+    "src/controller/auth.controller.ts#H1:L88+": {
+      hunkId: "src/controller/auth.controller.ts#H1",
+      lineType: "add",
+      newLineNumber: 88,
+    },
+    "src/controller/auth.controller.ts#H1:L89+": {
+      hunkId: "src/controller/auth.controller.ts#H1",
+      lineType: "add",
+      newLineNumber: 89,
+    },
+  },
+  hunks: [
+    {
+      hunkId: "src/controller/auth.controller.ts#H1",
+      header:
+        "@@ -86,4 +86,7 @@ async function handleRefresh(payload: JwtPayload) {",
+      oldStart: 86,
+      oldLines: 4,
+      newStart: 86,
+      newLines: 7,
+      lines: [
+        {
+          ref: "src/controller/auth.controller.ts#H1:L86",
+          lineType: "context",
+          oldLineNumber: 86,
+          newLineNumber: 86,
+          content: "async function handleRefresh(payload: JwtPayload) {",
+        },
+        {
+          ref: "src/controller/auth.controller.ts#H1:L88-",
+          lineType: "remove",
+          oldLineNumber: 88,
+          content: "  const userId = payload.userId;",
+        },
+        {
+          ref: "src/controller/auth.controller.ts#H1:L88+",
+          lineType: "add",
+          newLineNumber: 88,
+          content: "  const userId = getTokenUserId(payload);",
+        },
+        {
+          ref: "src/controller/auth.controller.ts#H1:L89+",
+          lineType: "add",
+          newLineNumber: 89,
+          content: "  const tokens = createRefreshToken(userId);",
+        },
+      ],
+    },
+  ],
+};
+
+const escalatedAuthContractReview = calibrateFirstPassDecision({
+  decision: {
+    decision: "no_issue",
+    confidence: 0.82,
+    riskLevel: "low",
+    rationale: "当前 diff 看起来像一次普通重构。",
+    evidenceCoverage: {
+      modifiedSymbol: true,
+      localContext: true,
+      callers: false,
+      callees: false,
+      tests: false,
+      schema: false,
+    },
+    provisionalFindings: [],
+  },
+  file: {
+    filePath: "src/controller/auth.controller.ts",
+    status: "modified",
+    additions: 5,
+    deletions: 2,
+    patch:
+      "@@ -86,4 +86,7 @@\n-  const userId = payload.userId;\n+  const userId = getTokenUserId(payload);\n+  const tokens = createRefreshToken(userId);\n }",
+  },
+  diff: authContractDiff,
+  ruleViolations: [],
+});
+
+assert.equal(escalatedAuthContractReview.decision, "need_more_context");
+assert.ok(escalatedAuthContractReview.contextRequest);
+assert.ok(
+  escalatedAuthContractReview.contextRequest?.symbols.includes(
+    "getTokenUserId",
+  ),
+);
+assert.ok(
+  escalatedAuthContractReview.contextRequest?.symbols.includes(
+    "createRefreshToken",
+  ),
+);

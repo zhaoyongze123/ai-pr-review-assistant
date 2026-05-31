@@ -21,8 +21,8 @@ export type SecondPassPrompt = {
   messages: PromptMessage[];
 };
 
-const FIRST_PASS_PROMPT_VERSION = "first-pass-triage.v2";
-const SECOND_PASS_PROMPT_VERSION = "second-pass-review.v2";
+const FIRST_PASS_PROMPT_VERSION = "first-pass-triage.v3";
+const SECOND_PASS_PROMPT_VERSION = "second-pass-review.v3";
 
 export function buildFirstPassReviewPrompt(input: {
   file: PullRequestFile;
@@ -56,6 +56,7 @@ export function buildFirstPassReviewPrompt(input: {
           "如果证据不足，不要编造问题。",
           "如果只是新增展示字段、派生字段、文案字段或 DTO 映射字段，且没有引入控制流、副作用、鉴权、持久化或并发变化，应优先选择 no_issue。",
           "如果函数名包含 Audit、Debug、Internal、Mock、Test 等内部语义，且缺少调用方、路由暴露、schema 或测试证据，不要仅凭局部 diff 把占位返回值或简化实现断言为确定性业务 bug，应优先选择 need_more_context 或 insufficient_evidence。",
+          "如果改动涉及 auth、jwt、token、refresh、payload、claim、authorization 或类似语义，重点检查 token 生成方与消费方是否仍遵守同一份 payload claim 命名与校验约定；只看当前文件不够时，应优先请求更多上下文。",
           "如果选择 need_more_context，必须提供 contextRequest。",
           "provisionalFindings 中的 diffLineRef 必须来自给定 allowedDiffLineRefs。",
           "所有自然语言字段必须使用简体中文，包括 rationale、contextRequest.reason、title、message、suggestion。",
@@ -178,6 +179,7 @@ export function buildSecondPassReviewPrompt(input: {
           "你已经拿到了 diff、首轮 triage 判断和额外仓库上下文。",
           "只有在证据足够时，才输出 candidateComments。",
           "如果新增函数带有 Audit、Debug、Internal、Mock、Test 等内部语义，而上下文里仍没有调用方、路由暴露、schema 或测试证据，不要把简化返回值、占位实现或局部数据映射直接判成确定性业务 bug。",
+          "如果改动涉及 auth、jwt、token、refresh、payload、claim 或 authorization，必须重点验证 token 生成方、消费方、middleware 和 refresh 链路是否仍使用一致的 claim 命名与解析逻辑。",
           "如果补充上下文后仍无法确认影响链路，应返回 insufficient_evidence，而不是为了给评论而给评论。",
           "candidateComments 必须具体、可执行，并明确引用 diffLineRef 和 evidenceRefs。",
           "如果仍然证据不足，返回 insufficient_evidence，并给出空 candidateComments。",

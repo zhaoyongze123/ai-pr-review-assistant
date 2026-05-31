@@ -382,6 +382,7 @@
 - [x] 真实 first-pass smoke 已验收 `completed` 状态的 `context_fetch_logs`
 - [x] 真实 first-pass smoke 已验收 `file_reviews.context_round > 0`
 - [x] LangSmith smoke 已验收 `second-pass-review` trace 节点
+- [x] 真实评测仓库 `zhaoyongze123/ai-pr-review-eval-auth-service#1` 已验证自动补扫、auth claim 跨文件检索扩展和 2 条 HIGH 最终评论
 
 ## M9. 评论准入、质量评分与结果聚合
 

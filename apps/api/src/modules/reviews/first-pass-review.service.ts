@@ -42,8 +42,12 @@ import {
 import { ContextFetchLogStoreService } from "../context/context-fetch-log-store.service.js";
 import { ContextFetcherService } from "../context/context-fetcher.service.js";
 import { ApiConfigService } from "../repositories/api-config.service.js";
+import { ApiModuleError } from "../repositories/api-error.js";
+import { RepositoryConnectService } from "../repositories/repository-connect.service.js";
 import { RepositoryStoreService } from "../repositories/repository-store.service.js";
 import { GitHubClientService } from "../repositories/github-client.service.js";
+import { RepositoryScanService } from "../scans/repository-scan.service.js";
+import { RepositoryScanStoreService } from "../scans/repository-scan-store.service.js";
 import { FileReviewStoreService } from "./file-review-store.service.js";
 import { LangsmithTraceService } from "./langsmith-trace.service.js";
 import { LlmCallLogStoreService } from "./llm-call-log-store.service.js";
@@ -63,6 +67,9 @@ type PreparedReviewRun = {
   reviewJob: ReviewJob;
 };
 
+const AUTO_SCAN_POLL_ATTEMPTS = 90;
+const AUTO_SCAN_POLL_INTERVAL_MS = 1000;
+
 @Injectable()
 export class FirstPassReviewService {
   constructor(
@@ -74,8 +81,14 @@ export class FirstPassReviewService {
     private readonly configService: ApiConfigService,
     @Inject(RepositoryStoreService)
     private readonly repositoryStoreService: RepositoryStoreService,
+    @Inject(RepositoryConnectService)
+    private readonly repositoryConnectService: RepositoryConnectService,
     @Inject(GitHubClientService)
     private readonly gitHubClientService: GitHubClientService,
+    @Inject(RepositoryScanService)
+    private readonly repositoryScanService: RepositoryScanService,
+    @Inject(RepositoryScanStoreService)
+    private readonly repositoryScanStoreService: RepositoryScanStoreService,
     @Inject(RuleEngineClientService)
     private readonly ruleEngineClientService: RuleEngineClientService,
     @Inject(PullRequestStoreService)
@@ -121,9 +134,7 @@ export class FirstPassReviewService {
   private async prepareRun(
     request: FirstPassReviewRunRequest,
   ): Promise<PreparedReviewRun> {
-    const repository = await this.repositoryStoreService.findByRef(
-      request.repository,
-    );
+    const repository = await this.ensureRepositoryConnected(request.repository);
     const pullRequest = await this.gitHubClientService.getPullRequest(
       request.repository,
       request.prNumber,
@@ -186,6 +197,14 @@ export class FirstPassReviewService {
     });
 
     try {
+      await this.ensureRepositoryScanReady({
+        repositoryId: repository?.id,
+        repository: request.repository,
+        targetSha: persistedPullRequest.headSha,
+        reviewJobId: reviewJob.id!,
+        parentRun: reviewJobTrace,
+      });
+
       const response = await this.langsmithTraceService.withRunTree(
         reviewJobTrace,
         async () =>
@@ -995,6 +1014,136 @@ export class FirstPassReviewService {
     });
   }
 
+  private async ensureRepositoryConnected(
+    repositoryRef: FirstPassReviewRunRequest["repository"],
+  ) {
+    const existing = await this.repositoryStoreService.findByRef(repositoryRef);
+    if (existing) {
+      return existing;
+    }
+
+    const connected =
+      await this.repositoryConnectService.connect(repositoryRef);
+    return connected.repository;
+  }
+
+  private async ensureRepositoryScanReady(input: {
+    repositoryId?: string;
+    repository: FirstPassReviewRunRequest["repository"];
+    targetSha: string;
+    reviewJobId: string;
+    parentRun?: Awaited<ReturnType<LangsmithTraceService["startRun"]>>;
+  }) {
+    if (!input.repositoryId) {
+      return;
+    }
+
+    const latestDone =
+      await this.repositoryScanStoreService.findLatestDoneByRepositoryId(
+        input.repositoryId,
+      );
+    if (latestDone?.targetSha === input.targetSha) {
+      return latestDone;
+    }
+
+    const scanTrace = await this.langsmithTraceService.startRun({
+      name: "ensure-repository-scan",
+      runType: "tool",
+      parentRun: input.parentRun,
+      inputs: {
+        repository: input.repository,
+        targetSha: input.targetSha,
+      },
+      metadata: {
+        reviewJobId: input.reviewJobId,
+      },
+      tags: ["repository-scan", "review-preflight"],
+    });
+
+    try {
+      const trigger = await this.langsmithTraceService.withRunTree(
+        scanTrace,
+        async () =>
+          this.repositoryScanService.trigger(input.repositoryId!, {
+            scanType: "full",
+            targetSha: input.targetSha,
+            requestedBy: "review-job:auto-bootstrap",
+          }),
+      );
+      const finalScan = await this.waitForRepositoryScan(
+        input.repositoryId,
+        trigger.scan.id!,
+      );
+
+      await this.langsmithTraceService.endRun({
+        run: scanTrace,
+        outputs: {
+          scanId: finalScan.id,
+          status: finalScan.status,
+          deduplicated: trigger.deduplicated,
+        },
+      });
+
+      return finalScan;
+    } catch (error) {
+      await this.langsmithTraceService.endRun({
+        run: scanTrace,
+        error: this.getSafeErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  private async waitForRepositoryScan(repositoryId: string, scanId: string) {
+    for (let attempt = 0; attempt < AUTO_SCAN_POLL_ATTEMPTS; attempt += 1) {
+      const scan = await this.repositoryScanStoreService.findById(
+        repositoryId,
+        scanId,
+      );
+      if (!scan) {
+        throw new ApiModuleError(
+          "SCAN_NOT_FOUND",
+          "自动补扫后无法查询到扫描记录，本次审查已终止",
+          404,
+          {
+            repositoryId,
+            scanId,
+          },
+        );
+      }
+
+      if (scan.status === "done") {
+        return scan;
+      }
+
+      if (scan.status === "failed") {
+        throw new ApiModuleError(
+          "INTERNAL_ERROR",
+          "仓库语义扫描失败，本次 PR 审查已终止",
+          409,
+          {
+            repositoryId,
+            scanId,
+            reason: "repository_scan_failed",
+          },
+        );
+      }
+
+      await sleep(AUTO_SCAN_POLL_INTERVAL_MS);
+    }
+
+    throw new ApiModuleError(
+      "INTERNAL_ERROR",
+      "等待仓库语义扫描完成超时，本次 PR 审查已终止",
+      504,
+      {
+        repositoryId,
+        scanId,
+        reason: "repository_scan_timeout",
+      },
+    );
+  }
+
   private getSafeErrorMessage(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -1024,10 +1173,10 @@ function toFirstPassRunRequest(
 function createDefaultFirstPassBudget(): ContextBudget {
   return {
     maxRounds: 1,
-    maxToolCalls: 4,
-    maxExtraFiles: 3,
+    maxToolCalls: 6,
+    maxExtraFiles: 5,
     maxCallDepth: 1,
-    maxExtraTokens: 4000,
+    maxExtraTokens: 6000,
     usedRounds: 0,
     usedToolCalls: 0,
     usedExtraFiles: 0,
@@ -1142,4 +1291,8 @@ function discoverModuleRuleConfigs(
   return Object.fromEntries(
     candidates.filter(([, target]) => existsSync(target)),
   );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

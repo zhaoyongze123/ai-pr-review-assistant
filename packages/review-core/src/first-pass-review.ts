@@ -105,6 +105,28 @@ export function calibrateFirstPassDecision(input: {
     };
   }
 
+  if (
+    normalized.decision !== "need_more_context" &&
+    !hasCrossFileEvidenceCoverage(normalized.evidenceCoverage) &&
+    shouldEscalateAuthTokenContractReview({
+      file: input.file,
+      diff: input.diff,
+      candidates: normalized.provisionalFindings,
+    })
+  ) {
+    return {
+      ...normalized,
+      decision: "need_more_context",
+      confidence: Math.min(normalized.confidence, 0.7),
+      riskLevel:
+        normalized.riskLevel === "low" ? "medium" : normalized.riskLevel,
+      rationale:
+        "当前改动涉及鉴权、token 或 payload claim 的跨文件契约。仅凭局部 diff 还无法确认 token 生成方、消费方和刷新链路是否保持一致，必须补充定义、调用链和相关测试证据。",
+      provisionalFindings: [],
+      contextRequest: buildAuthTokenContextRequest(input.file, input.diff),
+    };
+  }
+
   return normalized;
 }
 
@@ -245,10 +267,10 @@ function createHeuristicFirstPassDecision(
 function createDefaultFirstPassBudget(): ContextBudget {
   return {
     maxRounds: 1,
-    maxToolCalls: 4,
-    maxExtraFiles: 3,
+    maxToolCalls: 6,
+    maxExtraFiles: 5,
     maxCallDepth: 1,
-    maxExtraTokens: 4000,
+    maxExtraTokens: 6000,
     usedRounds: 0,
     usedToolCalls: 0,
     usedExtraFiles: 0,
@@ -399,6 +421,14 @@ function shouldDowngradeWeaklyEvidencedSecondPass(input: {
   );
 }
 
+function hasCrossFileEvidenceCoverage(
+  coverage: ReviewTriageDecision["evidenceCoverage"],
+): boolean {
+  return (
+    coverage.callers || coverage.callees || coverage.tests || coverage.schema
+  );
+}
+
 function extractIntroducedFunctionNames(diff: DiffParseResult): string[] {
   const names = new Set<string>();
 
@@ -463,6 +493,240 @@ function containsHighRiskKeyword(value: string): boolean {
   return /(鉴权|权限|越权|泄露|伪造|管理员|admin|secret|token|绕过|注入|执行)/i.test(
     value,
   );
+}
+
+function shouldEscalateAuthTokenContractReview(input: {
+  file: PullRequestFile;
+  diff: DiffParseResult;
+  candidates: ReviewCommentCandidate[];
+}): boolean {
+  const changedLines = getChangedLineContents(input.diff);
+  const combinedText = [input.file.filePath, ...changedLines].join("\n");
+  if (!isAuthRelevantText(combinedText)) {
+    return false;
+  }
+
+  const extractedSymbols = collectAuthContextSymbols(input.file, input.diff);
+  const hasClaimSignal =
+    /(userId|userID|\bsub\b|payload|claim|claims|JwtPayload)/i.test(
+      combinedText,
+    ) ||
+    extractedSymbols.some((symbol) =>
+      /(userId|userID|sub|payload|claim|JwtPayload)/i.test(symbol),
+    );
+  const hasProducerConsumerSignal =
+    /(getTokenUserId|verifyToken|decodeToken|createAccessToken|createRefreshToken|handleRefresh|refreshToken|accessToken)/i.test(
+      combinedText,
+    ) ||
+    extractedSymbols.some((symbol) =>
+      /(getTokenUserId|verifyToken|decodeToken|createAccessToken|createRefreshToken|handleRefresh)/i.test(
+        symbol,
+      ),
+    );
+  const hasChangedAuthSymbol = extractedSymbols.some((symbol) =>
+    /(auth|jwt|token|refresh|payload|claim|verify|session|authorization)/i.test(
+      symbol,
+    ),
+  );
+  const hasHighRiskCandidate = input.candidates.some((candidate) =>
+    ["security", "bug"].includes(candidate.category),
+  );
+
+  return (
+    ((hasClaimSignal && hasProducerConsumerSignal) ||
+      (hasProducerConsumerSignal && hasChangedAuthSymbol) ||
+      (hasClaimSignal && isAuthLikeFile(input.file.filePath))) &&
+    !hasHighRiskCandidate
+  );
+}
+
+function buildAuthTokenContextRequest(
+  file: PullRequestFile,
+  diff: DiffParseResult,
+): ReviewTriageDecision["contextRequest"] {
+  const symbolCandidates = collectAuthContextSymbols(file, diff);
+  const focusFunctions = extractIntroducedFunctionNames(diff).filter((name) =>
+    /(auth|jwt|token|refresh|verify|getTokenUserId|session)/i.test(name),
+  );
+  const primaryRuntimeSymbol =
+    pickMatchingSymbol(
+      symbolCandidates,
+      /(getTokenUserId|handleRefresh|createRefreshToken|createAccessToken|verifyToken|isAuth)/i,
+    ) ??
+    focusFunctions[0] ??
+    symbolCandidates[0] ??
+    file.filePath;
+  const secondaryRuntimeSymbol = pickMatchingSymbol(
+    symbolCandidates,
+    /(createRefreshToken|createAccessToken|verifyToken|JwtPayload)/i,
+    primaryRuntimeSymbol,
+  );
+  const tests = [
+    primaryRuntimeSymbol,
+    pickMatchingSymbol(
+      symbolCandidates,
+      /(handleRefresh|isAuth|getTokenUserId|createRefreshToken)/i,
+      primaryRuntimeSymbol,
+    ),
+    file.filePath,
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    reason:
+      "需要确认鉴权 token 的生成方、消费方和 refresh 链路是否仍使用一致的 payload claim 命名与校验约定，避免只看局部 diff 漏掉跨文件契约回归。",
+    symbols: symbolCandidates.slice(0, 6),
+    files: [file.filePath],
+    callersOf: uniqueItems(
+      [primaryRuntimeSymbol, secondaryRuntimeSymbol].filter(
+        (value): value is string => Boolean(value),
+      ),
+    ).slice(0, 2),
+    calleesOf: uniqueItems(
+      [focusFunctions[0], primaryRuntimeSymbol].filter(
+        (value): value is string => Boolean(value),
+      ),
+    ).slice(0, 2),
+    tests: uniqueItems(tests).slice(0, 2),
+    schemaTargets: uniqueItems(
+      symbolCandidates.filter((symbol) =>
+        /(JwtPayload|payload|claim|token|session)/i.test(symbol),
+      ),
+    ).slice(0, 2),
+  };
+}
+
+function collectAuthContextSymbols(
+  file: PullRequestFile,
+  diff: DiffParseResult,
+): string[] {
+  const candidates = new Set<string>();
+  const changedLines = getChangedLineContents(diff);
+
+  for (const name of extractIntroducedFunctionNames(diff)) {
+    if (isAuthCandidateSymbol(name)) {
+      candidates.add(name);
+    }
+  }
+
+  for (const line of changedLines) {
+    for (const match of line.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+      const identifier = match[1];
+      if (identifier && isAuthCandidateSymbol(identifier)) {
+        candidates.add(identifier);
+      }
+    }
+
+    for (const match of line.matchAll(
+      /(?:^|[\s:(<,])([A-Z][A-Za-z0-9_$]+)(?=[>\s,)|])/g,
+    )) {
+      const identifier = match[1];
+      if (identifier && isAuthCandidateSymbol(identifier)) {
+        candidates.add(identifier);
+      }
+    }
+  }
+
+  for (const defaultSymbol of deriveAuthDefaultSymbols(file.filePath, diff)) {
+    candidates.add(defaultSymbol);
+  }
+
+  return uniqueItems([...candidates]);
+}
+
+function deriveAuthDefaultSymbols(
+  filePath: string,
+  diff: DiffParseResult,
+): string[] {
+  const changedText = getChangedLineContents(diff).join("\n");
+  const defaults: string[] = [];
+
+  if (/getTokenUserId/i.test(changedText)) {
+    defaults.push("getTokenUserId");
+  }
+  if (/refresh/i.test(changedText) || /refresh/i.test(filePath)) {
+    defaults.push("handleRefresh", "createRefreshToken");
+  }
+  if (
+    /(accessToken|authorization|bearer|verifyToken|isAuth)/i.test(
+      changedText,
+    ) ||
+    /(middleware|isAuth|auth)/i.test(filePath)
+  ) {
+    defaults.push("createAccessToken", "verifyToken", "isAuth");
+  }
+  if (/(JwtPayload|payload|claim|userId|userID|\bsub\b)/i.test(changedText)) {
+    defaults.push("JwtPayload");
+  }
+
+  return defaults.filter((value) => isAuthCandidateSymbol(value));
+}
+
+function getChangedLineContents(diff: DiffParseResult): string[] {
+  return diff.hunks.flatMap((hunk) =>
+    hunk.lines
+      .filter((line) => line.lineType === "add" || line.lineType === "remove")
+      .map((line) => line.content.trim())
+      .filter(Boolean),
+  );
+}
+
+function isAuthRelevantText(value: string): boolean {
+  return /(auth|jwt|token|refresh|payload|claim|authorization|session|cookie)/i.test(
+    value,
+  );
+}
+
+function isAuthCandidateSymbol(value: string): boolean {
+  return (
+    !isJavaScriptKeyword(value) &&
+    /(auth|jwt|token|refresh|payload|claim|verify|session|authorization|getTokenUserId|userId|userID|sub)/i.test(
+      value,
+    )
+  );
+}
+
+function isJavaScriptKeyword(value: string): boolean {
+  return new Set([
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "const",
+    "let",
+    "var",
+    "function",
+    "new",
+    "await",
+    "catch",
+    "throw",
+    "typeof",
+    "class",
+  ]).has(value);
+}
+
+function isAuthLikeFile(filePath: string): boolean {
+  return /(auth|jwt|token|session|middleware)/i.test(filePath);
+}
+
+function uniqueItems(values: string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || unique.has(normalized)) {
+      continue;
+    }
+    unique.add(normalized);
+  }
+  return [...unique];
+}
+
+function pickMatchingSymbol(
+  symbols: string[],
+  pattern: RegExp,
+  exclude?: string,
+): string | undefined {
+  return symbols.find((symbol) => symbol !== exclude && pattern.test(symbol));
 }
 
 function isDocumentationFile(filePath: string): boolean {

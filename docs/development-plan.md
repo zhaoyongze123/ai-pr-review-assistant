@@ -591,6 +591,8 @@
 - `second-pass prompt`、`LLM gateway`、`context_fetch_logs` 已接入主审查链路
 - 真实 smoke 已验收 `completed` 状态的 `context fetch`
 - LangSmith smoke 已验收 `second-pass-review` trace
+- 已补 `review -> repository scan` 的前置兜底：缺少当前 `headSha` 对应 scan 时，会自动 connect 仓库并触发补扫，不再允许空快照伪装成真实上下文检索
+- 已为 auth / token / refresh / claim 场景补高风险扩展规则：首轮会强制升级为 `need_more_context`，上下文检索会主动追 token 生成方、消费方、refresh 处理函数和相关测试
 
 ### 代码落点
 
@@ -622,6 +624,14 @@
 - 请求 callers 时，优先从结构化索引得到真实代码线索。
 - second-pass 输出质量优于只看 diff 的结果。
 - 不出现无限检索或上下文爆炸。
+
+### 当前落地结果
+
+- 真实评测仓库 `zhaoyongze123/ai-pr-review-eval-auth-service#1` 已完成回归验证：
+  - 自动补扫成功生成 `repository_scans / repository_files / symbols / semantic_documents`
+  - `src/controller/auth.controller.ts` 已进入 `context_round = 1`
+  - 二轮检索已命中 `getTokenUserId`、`createAccessToken`、`createRefreshToken`、`handleRefresh`、`JwtPayload` 及相关测试证据
+  - 最终已输出 2 条 HIGH 评论，命中 refresh token claim 命名不一致导致续签失败与清理逻辑失效
 
 ### LangSmith
 

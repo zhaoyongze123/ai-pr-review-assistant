@@ -129,14 +129,24 @@ export function createContextFetchPlan(
 }
 
 function normalizeContextRequest(request: ContextRequest): ContextRequest {
+  const authHeavyRequest = isAuthHeavyRequest(request);
   return {
     ...request,
-    symbols: normalizeRequestItems(request.symbols, 2),
-    files: normalizeRequestItems(request.files, 2),
-    callersOf: normalizeRequestItems(request.callersOf, 1),
-    calleesOf: normalizeRequestItems(request.calleesOf, 1),
-    tests: normalizeRequestItems(request.tests, 1),
-    schemaTargets: normalizeRequestItems(request.schemaTargets, 1),
+    symbols: normalizeRequestItems(request.symbols, authHeavyRequest ? 4 : 2),
+    files: normalizeRequestItems(request.files, authHeavyRequest ? 3 : 2),
+    callersOf: normalizeRequestItems(
+      request.callersOf,
+      authHeavyRequest ? 2 : 1,
+    ),
+    calleesOf: normalizeRequestItems(
+      request.calleesOf,
+      authHeavyRequest ? 2 : 1,
+    ),
+    tests: normalizeRequestItems(request.tests, authHeavyRequest ? 2 : 1),
+    schemaTargets: normalizeRequestItems(
+      request.schemaTargets,
+      authHeavyRequest ? 2 : 1,
+    ),
   };
 }
 
@@ -155,4 +165,20 @@ function normalizeRequestItems(values: string[], limit: number): string[] {
   }
 
   return Array.from(unique);
+}
+
+function isAuthHeavyRequest(request: ContextRequest): boolean {
+  const combined = [
+    request.reason,
+    ...request.symbols,
+    ...request.files,
+    ...request.callersOf,
+    ...request.calleesOf,
+    ...request.tests,
+    ...request.schemaTargets,
+  ].join(" ");
+
+  return /(鉴权|auth|jwt|token|refresh|payload|claim|authorization|session|cookie|getTokenUserId|verifyToken)/i.test(
+    combined,
+  );
 }

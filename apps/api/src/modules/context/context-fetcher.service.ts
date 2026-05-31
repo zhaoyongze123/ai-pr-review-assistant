@@ -49,6 +49,15 @@ export class ContextFetcherService {
       await this.repositoryContextStoreService.loadLatestSnapshot(
         input.repositoryId,
       );
+    if (isEmptySnapshot(snapshot)) {
+      return {
+        ...plan,
+        status: "skipped",
+        reason: "仓库还没有已完成的结构化扫描，无法执行真实上下文检索",
+        artifacts: [],
+      };
+    }
+
     const artifacts: ContextArtifact[] = [];
     const focusModuleName = snapshot.files.find(
       (file) => file.filePath === input.focusFilePath,
@@ -70,6 +79,16 @@ export class ContextFetcherService {
         moduleName: focusModuleName,
       });
       appendArtifacts(artifacts, semanticArtifacts);
+    }
+
+    if (shouldExpandAuthContractContext(input.request, input.focusFilePath)) {
+      const authExpansionArtifacts = await loadAuthContractArtifacts({
+        snapshot,
+        request: input.request,
+        repositoryPath: input.repositoryPath,
+        focusFilePath: input.focusFilePath,
+      });
+      appendArtifacts(artifacts, authExpansionArtifacts);
     }
 
     return {
@@ -220,7 +239,9 @@ async function buildCallerArtifacts(
   );
   const callers = snapshot.edges
     .filter(
-      (edge) => edge.edgeType === "calls" && targetQualifiedNames.has(edge.toQualifiedName),
+      (edge) =>
+        edge.edgeType === "calls" &&
+        targetQualifiedNames.has(edge.toQualifiedName),
     )
     .map((edge) =>
       snapshot.symbols.find(
@@ -547,6 +568,7 @@ function buildSemanticQuery(request: ContextRequest): string {
     ...request.symbols,
     ...request.files,
     ...request.callersOf,
+    ...request.calleesOf,
     ...request.tests,
   ]
     .filter(Boolean)
@@ -624,6 +646,252 @@ function sameArtifact(left: ContextArtifact, right: ContextArtifact): boolean {
   );
 }
 
+function isEmptySnapshot(snapshot: RepositoryContextSnapshot): boolean {
+  return (
+    snapshot.files.length === 0 &&
+    snapshot.symbols.length === 0 &&
+    snapshot.edges.length === 0
+  );
+}
+
+function shouldExpandAuthContractContext(
+  request: ContextRequest,
+  focusFilePath?: string,
+): boolean {
+  const combined = [
+    request.reason,
+    focusFilePath ?? "",
+    ...request.symbols,
+    ...request.files,
+    ...request.callersOf,
+    ...request.calleesOf,
+    ...request.tests,
+    ...request.schemaTargets,
+  ].join(" ");
+
+  return (
+    /(鉴权|auth|jwt|token|refresh|payload|claim|authorization|session|cookie)/i.test(
+      combined,
+    ) &&
+    /(getTokenUserId|createRefreshToken|createAccessToken|verifyToken|handleRefresh|JwtPayload|userId|userID|sub|refresh)/i.test(
+      combined,
+    )
+  );
+}
+
+async function loadAuthContractArtifacts(input: {
+  snapshot: RepositoryContextSnapshot;
+  request: ContextRequest;
+  repositoryPath: string;
+  focusFilePath?: string;
+}): Promise<ContextArtifact[]> {
+  const artifacts: ContextArtifact[] = [];
+  const queries = collectAuthExpansionQueries(
+    input.snapshot,
+    input.request,
+    input.focusFilePath,
+  );
+
+  for (const query of queries.definitionQueries.slice(0, 3)) {
+    appendArtifacts(
+      artifacts,
+      await buildDefinitionArtifacts(
+        input.snapshot,
+        query,
+        input.repositoryPath,
+      ),
+    );
+  }
+
+  if (queries.calleeQuery) {
+    appendArtifacts(
+      artifacts,
+      await buildCalleeArtifacts(
+        input.snapshot,
+        queries.calleeQuery,
+        input.repositoryPath,
+      ),
+    );
+  }
+
+  if (queries.callerQuery) {
+    appendArtifacts(
+      artifacts,
+      await buildCallerArtifacts(
+        input.snapshot,
+        queries.callerQuery,
+        input.repositoryPath,
+      ),
+    );
+  }
+
+  if (queries.testQuery) {
+    appendArtifacts(
+      artifacts,
+      await buildTestArtifacts(
+        input.snapshot,
+        queries.testQuery,
+        input.repositoryPath,
+      ),
+    );
+  }
+
+  return artifacts;
+}
+
+function collectAuthExpansionQueries(
+  snapshot: RepositoryContextSnapshot,
+  request: ContextRequest,
+  focusFilePath?: string,
+): {
+  definitionQueries: string[];
+  calleeQuery?: string;
+  callerQuery?: string;
+  testQuery?: string;
+} {
+  const requested = [
+    ...request.symbols,
+    ...request.callersOf,
+    ...request.calleesOf,
+    ...request.tests,
+    ...request.schemaTargets,
+  ];
+  const focusSymbols = snapshot.symbols
+    .filter(
+      (symbol) =>
+        symbol.filePath === focusFilePath &&
+        isAuthExpansionSymbol(symbol.symbolName),
+    )
+    .map((symbol) => symbol.symbolName);
+  const focusQualifiedNames = new Set(
+    snapshot.symbols
+      .filter((symbol) => symbol.filePath === focusFilePath)
+      .map((symbol) => symbol.qualifiedName),
+  );
+  const neighborSymbols = snapshot.edges
+    .filter(
+      (edge) =>
+        focusQualifiedNames.has(edge.fromQualifiedName) ||
+        focusQualifiedNames.has(edge.toQualifiedName),
+    )
+    .flatMap((edge) => [
+      snapshot.symbols.find(
+        (symbol) => symbol.qualifiedName === edge.fromQualifiedName,
+      ),
+      snapshot.symbols.find(
+        (symbol) => symbol.qualifiedName === edge.toQualifiedName,
+      ),
+    ])
+    .filter((symbol): symbol is Symbol => Boolean(symbol))
+    .filter((symbol) => isHighValueAuthNeighbor(symbol, focusFilePath));
+
+  const prioritized = uniqueStrings(
+    [
+      ...requested,
+      ...focusSymbols,
+      ...neighborSymbols.map((symbol) => symbol.symbolName),
+      ...neighborSymbols.map((symbol) => symbol.qualifiedName),
+      ...deriveAuthFallbackQueries(request, focusFilePath),
+    ].filter((value) => isAuthExpansionSymbol(value)),
+  ).sort(
+    (left, right) =>
+      authQueryScore(right, focusFilePath) -
+      authQueryScore(left, focusFilePath),
+  );
+
+  return {
+    definitionQueries: prioritized,
+    calleeQuery: prioritized.find((query) =>
+      /(handleRefresh|isAuth|getTokenUserId|verifyToken)/i.test(query),
+    ),
+    callerQuery: prioritized.find((query) =>
+      /(getTokenUserId|createRefreshToken|createAccessToken|verifyToken|JwtPayload)/i.test(
+        query,
+      ),
+    ),
+    testQuery: prioritized.find((query) =>
+      /(getTokenUserId|handleRefresh|isAuth|createRefreshToken|verifyToken)/i.test(
+        query,
+      ),
+    ),
+  };
+}
+
+function deriveAuthFallbackQueries(
+  request: ContextRequest,
+  focusFilePath?: string,
+): string[] {
+  const combined = [
+    request.reason,
+    focusFilePath ?? "",
+    ...request.symbols,
+    ...request.callersOf,
+    ...request.calleesOf,
+  ].join(" ");
+  const defaults: string[] = [];
+
+  if (/refresh/i.test(combined)) {
+    defaults.push("handleRefresh", "createRefreshToken");
+  }
+  if (/getTokenUserId/i.test(combined)) {
+    defaults.push("getTokenUserId");
+  }
+  if (/(authorization|bearer|middleware|verifyToken|isAuth)/i.test(combined)) {
+    defaults.push("verifyToken", "isAuth", "createAccessToken");
+  }
+  if (/(JwtPayload|payload|claim|userId|userID|\bsub\b)/i.test(combined)) {
+    defaults.push("JwtPayload");
+  }
+
+  return defaults;
+}
+
+function isAuthExpansionSymbol(value: string): boolean {
+  return /(auth|jwt|token|refresh|payload|claim|verify|session|authorization|getTokenUserId|handleRefresh|userId|userID|sub)/i.test(
+    value,
+  );
+}
+
+function isHighValueAuthNeighbor(
+  symbol: Symbol,
+  focusFilePath?: string,
+): boolean {
+  return (
+    isAuthExpansionSymbol(symbol.symbolName) &&
+    symbol.filePath !== focusFilePath
+  );
+}
+
+function authQueryScore(query: string, focusFilePath?: string): number {
+  let score = 0;
+  if (
+    /(getTokenUserId|createRefreshToken|createAccessToken|verifyToken|handleRefresh|JwtPayload)/i.test(
+      query,
+    )
+  ) {
+    score += 8;
+  }
+  if (focusFilePath && query.includes(focusFilePath)) {
+    score -= 2;
+  }
+  if (/(auth|jwt|token|refresh|payload|claim|session)/i.test(query)) {
+    score += 3;
+  }
+  return score;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || unique.has(normalized)) {
+      continue;
+    }
+    unique.add(normalized);
+  }
+  return [...unique];
+}
+
 function matchFilePath(filePath: string, query: string): boolean {
   const normalizedFile = filePath.toLowerCase();
   const normalizedQuery = query.toLowerCase();
@@ -634,7 +902,10 @@ function matchFilePath(filePath: string, query: string): boolean {
   );
 }
 
-function safeResolvePath(repositoryPath: string, filePath: string): string | null {
+function safeResolvePath(
+  repositoryPath: string,
+  filePath: string,
+): string | null {
   const resolvedRoot = path.resolve(repositoryPath);
   const absolutePath = path.resolve(repositoryPath, filePath);
   return absolutePath.startsWith(resolvedRoot) ? absolutePath : null;
