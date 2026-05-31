@@ -47,7 +47,7 @@ type PullRequestRef = {
 };
 
 const DEFAULT_PR_URL =
-  "https://github.com/zhaoyongze123/ai-pr-review-assistant/pull/11";
+  "https://github.com/zhaoyongze123/ai-pr-review-eval-auth-service/pull/1";
 
 const SEVERITY_LABELS: Record<SeverityFilter, string> = {
   ALL: "全部",
