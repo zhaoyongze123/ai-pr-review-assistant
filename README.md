@@ -61,11 +61,11 @@ GitHub PR
 
 完整演示视频：
 
-- [点击查看 AI PR Review 工作台演示视频](./docs/assets/demo/ai-pr-review-demo.m4v)
+- [点击查看 AI PR Review 工作台演示视频](./docs/assets/demo/ai-pr-review-demo.mp4)
 
 也可以直接点击下图打开视频：
 
-[![AI PR Review 工作台演示视频封面](docs/assets/screenshots/review-overview-analyzing.png)](./docs/assets/demo/ai-pr-review-demo.m4v)
+[![AI PR Review 工作台演示视频封面](docs/assets/screenshots/review-overview-analyzing.png)](./docs/assets/demo/ai-pr-review-demo.mp4)
 
 ---
 
