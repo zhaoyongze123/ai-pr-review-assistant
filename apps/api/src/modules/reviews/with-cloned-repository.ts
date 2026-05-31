@@ -23,15 +23,11 @@ export async function withClonedRepository<T>(options: {
       cloneUrl: options.cloneUrl,
       authToken: options.authToken,
     });
-    await execFileAsync("git", [
-      "-C",
+    await fetchRepositoryRef({
       repositoryPath,
-      "fetch",
-      "--depth",
-      "1",
-      "origin",
-      options.ref,
-    ]);
+      ref: options.ref,
+      authToken: options.authToken,
+    });
     await execFileAsync("git", [
       "-C",
       repositoryPath,
@@ -78,6 +74,38 @@ async function cloneRepository(options: {
   }
 
   throw new Error(`仓库克隆失败。${failures.join("；")}`);
+}
+
+async function fetchRepositoryRef(options: {
+  repositoryPath: string;
+  ref: string;
+  authToken?: string;
+}) {
+  const failures: string[] = [];
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await execFileAsync("git", [
+        "-C",
+        options.repositoryPath,
+        "fetch",
+        "--depth",
+        "1",
+        "origin",
+        options.ref,
+      ]);
+      return;
+    } catch (error) {
+      failures.push(
+        `第 ${attempt} 次 fetch 失败：${formatCloneError(error, options.authToken)}`,
+      );
+      if (attempt < 3) {
+        await wait(400 * attempt);
+      }
+    }
+  }
+
+  throw new Error(`仓库 fetch 失败。${failures.join("；")}`);
 }
 
 function buildCloneAttempts(cloneUrl: string, authToken?: string) {
@@ -130,4 +158,8 @@ function sanitizeSensitiveText(text: string, authToken?: string) {
       "$1$2:[REDACTED_GITHUB_TOKEN]@",
     )
     .replace(/\bgh[opus]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

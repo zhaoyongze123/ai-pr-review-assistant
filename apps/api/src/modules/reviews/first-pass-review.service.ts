@@ -4,6 +4,8 @@ import { parseUnifiedDiffPatch } from "@ai-pr-review/diff-core";
 import {
   buildFileReviewSummary,
   buildReviewAggregateResult,
+  calibrateFirstPassDecision,
+  calibrateSecondPassResult,
   finalizeFileReviewComments,
   runFirstPassReviewPipeline,
   runReviewPipeline,
@@ -458,7 +460,12 @@ export class FirstPassReviewService {
           tags: ["first-pass", "triage", this.configService.defaultLlmModel],
         }),
       });
-      decision = llmResult.parsed;
+      decision = calibrateFirstPassDecision({
+        decision: llmResult.parsed,
+        file: input.file,
+        diff,
+        ruleViolations: relatedViolations,
+      });
     } catch {
       decision = fallback.firstPass;
     }
@@ -496,7 +503,14 @@ export class FirstPassReviewService {
           firstPass: decision,
           contextResult,
         });
-        secondPassResult = secondPass?.parsed;
+        secondPassResult = secondPass
+          ? calibrateSecondPassResult({
+              result: secondPass.parsed,
+              file: input.file,
+              diff,
+              firstPass: decision,
+            })
+          : undefined;
       }
 
       if (!secondPassResult && contextResult) {

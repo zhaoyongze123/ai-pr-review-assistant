@@ -4,7 +4,10 @@ import {
   type ReviewCommentCandidate,
   ReviewCommentCandidateSchema,
 } from "@ai-pr-review/shared-types";
-import { scoreCommentCandidate } from "./quality-scoring.js";
+import {
+  hasClearImpactSignal,
+  scoreCommentCandidate,
+} from "./quality-scoring.js";
 
 export function evaluateCommentAdmission(
   candidateInput: ReviewCommentCandidate,
@@ -21,7 +24,7 @@ export function evaluateCommentAdmission(
     reasons.push("缺少 evidence_refs，无法回溯证据链");
   }
 
-  if (!/(如果|当|会导致|导致|when|if)/i.test(candidate.message)) {
+  if (!hasClearImpactSignal(candidate.message)) {
     reasons.push("消息没有明确说明故障条件或影响方式");
   }
 

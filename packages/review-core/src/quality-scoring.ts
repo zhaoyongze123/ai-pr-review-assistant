@@ -19,8 +19,15 @@ const LOW_SIGNAL_PATTERNS = [
   "注意一下",
 ];
 
+const IMPACT_SIGNAL_PATTERN =
+  /(如果|当|一旦|会导致|导致|when|if|意味着|暴露|泄露|绕过|误判|失败|阻塞|占用|伪造|越权|风险)/i;
+
 function clamp(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export function hasClearImpactSignal(message: string) {
+  return IMPACT_SIGNAL_PATTERN.test(message);
 }
 
 export function scoreCommentCandidate(
@@ -36,7 +43,7 @@ export function scoreCommentCandidate(
   );
 
   const impactClarity = clamp(
-    (/(如果|当|会导致|导致|when|if)/i.test(candidate.message) ? 55 : 20) +
+    (hasClearImpactSignal(candidate.message) ? 55 : 20) +
       (candidate.severity === "HIGH"
         ? 25
         : candidate.severity === "MEDIUM"
