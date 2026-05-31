@@ -7,6 +7,8 @@
 
 🌐 在线地址：[https://pr.zyzsharehub.cn/](https://pr.zyzsharehub.cn/)
 
+注：当前演示环境连的ChatGPT 5.4 用的中转站日卡 有时不能用可能因为没及时续费
+
 ---
 
 ## ✨ 项目亮点
