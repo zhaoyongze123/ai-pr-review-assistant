@@ -142,6 +142,67 @@ function expectSuppressionAndDeduplication() {
   );
 }
 
+function expectHighRiskSecurityCommentToPassAdmission() {
+  const file = {
+    filePath: "src/auth/auth.service.ts",
+    status: "modified",
+    additions: 5,
+    deletions: 0,
+    patch: [
+      "@@ -20,0 +21,10 @@",
+      "+export function debugLogin(userId: string) {",
+      '+  const session = createSession(userId, \"admin\");',
+      "+  return {",
+      "+    sessionId: session.id,",
+      "+    sessionSecret: `secret-${userId}`,",
+      "+  };",
+      "+}",
+    ].join("\n"),
+    language: "TypeScript",
+  } satisfies PullRequestFile;
+  const diff = parseUnifiedDiffPatch(file);
+
+  const finalized = finalizeFileReviewComments({
+    reviewJobId: "fca99833-c2b4-43d8-929d-77676ee2f61d",
+    filePath: file.filePath,
+    diff,
+    triageDecision: "final_review",
+    contextRound: 0,
+    aiCandidates: [
+      {
+        diffLineRef: `${file.filePath}#H1:L2+`,
+        lineRefs: [`${file.filePath}#H1:L2+`, `${file.filePath}#H1:L5+`],
+        severity: "HIGH",
+        category: "security",
+        title: "新增调试入口可为任意用户签发管理员会话并泄露会话密钥",
+        message:
+          '`debugLogin` 只接收 `userId` 就直接调用 `createSession(userId, "admin")`，这意味着一旦该函数被路由或脚本误接入运行时环境，攻击者无需鉴权即可伪造管理员身份。同时返回 `sessionSecret` 会把敏感凭据暴露给调用方，放大会话伪造与横向移动风险。',
+        suggestion:
+          "删除该导出函数；如果确实需要调试能力，应限制在测试专用模块中，并避免返回任何认证敏感数据。",
+        confidence: 0.99,
+        evidenceRefs: [
+          "diff:src/auth/auth.service.ts#H1:L2+",
+          "diff:src/auth/auth.service.ts#H1:L5+",
+        ],
+        duplicateFingerprint:
+          "src/auth/auth.service.ts:debugLogin-admin-session-secret-leak",
+      },
+    ],
+    ruleViolations: [],
+  });
+
+  assert.equal(
+    finalized.aiComments.length,
+    1,
+    "高风险安全评论不应因表达方式不同被误压制",
+  );
+  assert.equal(
+    finalized.admissionDecisions[0]?.admitted,
+    true,
+    "存在明确影响描述的高风险评论应通过 admission gate",
+  );
+}
+
 function expectAggregateSummary() {
   const reviewJob = {
     id: "d4e72e8f-6e3d-4703-90cb-3d0eb6ff9dc4",
@@ -225,6 +286,7 @@ function expectAggregateSummary() {
 async function main() {
   await validateFixtures();
   expectSuppressionAndDeduplication();
+  expectHighRiskSecurityCommentToPassAdmission();
   expectAggregateSummary();
   console.log("review aggregation validation passed");
 }

@@ -9,6 +9,7 @@ import type {
   PullRequestFile,
   RuleViolation,
   ReviewCommentCandidate,
+  SecondPassReviewResult,
   ReviewTriageDecision,
 } from "@ai-pr-review/shared-types";
 
@@ -31,6 +32,109 @@ export interface FirstPassReviewInput {
 
 export interface FirstPassReviewPipelineResult extends ReviewPipelineResult {
   firstPass: ReviewTriageDecision;
+}
+
+export function calibrateFirstPassDecision(input: {
+  decision: ReviewTriageDecision;
+  file: PullRequestFile;
+  diff: DiffParseResult;
+  ruleViolations?: RuleViolation[];
+}): ReviewTriageDecision {
+  const normalized = normalizeDecisionShape(input.decision);
+  const ruleViolations = input.ruleViolations ?? [];
+
+  if (
+    ruleViolations.length === 0 &&
+    ["insufficient_evidence", "need_more_context"].includes(
+      normalized.decision,
+    ) &&
+    normalized.provisionalFindings.length === 0 &&
+    isDocumentationFile(input.file.filePath)
+  ) {
+    return {
+      ...normalized,
+      decision: "no_issue",
+      confidence: Math.max(normalized.confidence, 0.7),
+      riskLevel: "low",
+      rationale:
+        "当前改动只落在文档或说明文件，没有规则命中，也没有足以形成代码缺陷评论的证据，不应把文档改动升级为证据不足告警。",
+      provisionalFindings: [],
+      contextRequest: undefined,
+    };
+  }
+
+  if (
+    ruleViolations.length === 0 &&
+    ["insufficient_evidence", "need_more_context"].includes(
+      normalized.decision,
+    ) &&
+    normalized.provisionalFindings.length === 0 &&
+    isTrivialPresentationFieldAddition(input.diff)
+  ) {
+    return {
+      ...normalized,
+      decision: "no_issue",
+      confidence: Math.max(normalized.confidence, 0.72),
+      riskLevel: "low",
+      rationale:
+        "本次改动只是在现有返回对象中新增简单展示字段，没有看到控制流、副作用、鉴权、持久化或并发语义变化，不应把这类低信号字段补充升级为证据不足告警。",
+      provisionalFindings: [],
+      contextRequest: undefined,
+    };
+  }
+
+  if (
+    ruleViolations.length === 0 &&
+    normalized.decision === "final_review" &&
+    shouldDowngradeContextSensitiveConclusion({
+      diff: input.diff,
+      evidenceCoverage: normalized.evidenceCoverage,
+      candidates: normalized.provisionalFindings,
+    })
+  ) {
+    return {
+      ...normalized,
+      decision: "need_more_context",
+      confidence: Math.min(normalized.confidence, 0.68),
+      riskLevel:
+        normalized.riskLevel === "high" ? "medium" : normalized.riskLevel,
+      rationale:
+        "当前 diff 更像带有 audit/debug/internal 语义的内部辅助函数或占位实现。仅凭局部 diff 看到的返回值形态，还不足以把它断言成确定性业务缺陷，需要先确认路由暴露方式、调用方鉴权和真实数据来源。",
+      provisionalFindings: [],
+      contextRequest: buildContextSensitiveRequest(input.file, input.diff),
+    };
+  }
+
+  return normalized;
+}
+
+export function calibrateSecondPassResult(input: {
+  result: SecondPassReviewResult;
+  file: PullRequestFile;
+  diff: DiffParseResult;
+  firstPass: ReviewTriageDecision;
+}): SecondPassReviewResult {
+  const normalized = normalizeSecondPassShape(input.result);
+
+  if (
+    normalized.decision === "final_review" &&
+    shouldDowngradeWeaklyEvidencedSecondPass({
+      diff: input.diff,
+      firstPass: input.firstPass,
+      candidates: normalized.candidateComments,
+    }) &&
+    !hasStrongContextEvidence(normalized.candidateComments)
+  ) {
+    return {
+      decision: "insufficient_evidence",
+      confidence: Math.min(normalized.confidence, 0.62),
+      rationale:
+        "虽然补充了一轮上下文，但当前证据仍不足以确认这是稳定成立的业务缺陷。对于 audit/debug/internal 语义的函数，若没有调用方、路由或 schema 证据，不应直接输出确定性评论。",
+      candidateComments: [],
+    };
+  }
+
+  return normalized;
 }
 
 export function runReviewPipeline(
@@ -150,6 +254,222 @@ function createDefaultFirstPassBudget(): ContextBudget {
     usedExtraFiles: 0,
     usedExtraTokens: 0,
   };
+}
+
+function normalizeDecisionShape(
+  decision: ReviewTriageDecision,
+): ReviewTriageDecision {
+  if (decision.decision === "need_more_context") {
+    return decision;
+  }
+
+  return {
+    ...decision,
+    provisionalFindings:
+      decision.decision === "no_issue" ? [] : decision.provisionalFindings,
+    contextRequest: undefined,
+  };
+}
+
+function normalizeSecondPassShape(
+  result: SecondPassReviewResult,
+): SecondPassReviewResult {
+  return {
+    ...result,
+    candidateComments:
+      result.decision === "no_issue" ? [] : result.candidateComments,
+  };
+}
+
+function isTrivialPresentationFieldAddition(diff: DiffParseResult): boolean {
+  const addedLines = diff.hunks.flatMap((hunk) =>
+    hunk.lines.filter((line) => line.lineType === "add"),
+  );
+  const nonEmptyAddedLines = addedLines.filter(
+    (line) => line.content.trim().length > 0,
+  );
+
+  if (
+    nonEmptyAddedLines.length === 0 ||
+    nonEmptyAddedLines.length > 2 ||
+    diff.totalRemovedLines > 0
+  ) {
+    return false;
+  }
+
+  const hasReturnObjectContext = diff.hunks.some((hunk) =>
+    hunk.lines.some(
+      (line) =>
+        line.lineType === "context" && line.content.includes("return {"),
+    ),
+  );
+  if (!hasReturnObjectContext) {
+    return false;
+  }
+
+  const suspiciousPattern =
+    /\b(token|secret|password|admin|auth|permission|scope|sessionSecret|cookie|header)\b/i;
+  const controlFlowPattern =
+    /\b(if|for|while|switch|throw|await|try|catch|new|return)\b|=>|function\s+/;
+
+  return nonEmptyAddedLines.every((line) => {
+    const content = line.content.trim();
+    return (
+      /^[A-Za-z_$][\w$]*:\s*.+,?$/.test(content) &&
+      !suspiciousPattern.test(content) &&
+      !controlFlowPattern.test(content)
+    );
+  });
+}
+
+function shouldDowngradeContextSensitiveConclusion(input: {
+  diff: DiffParseResult;
+  evidenceCoverage: ReviewTriageDecision["evidenceCoverage"];
+  candidates: ReviewCommentCandidate[];
+}): boolean {
+  if (input.candidates.length === 0) {
+    return false;
+  }
+
+  if (
+    input.evidenceCoverage.callers ||
+    input.evidenceCoverage.callees ||
+    input.evidenceCoverage.tests ||
+    input.evidenceCoverage.schema
+  ) {
+    return false;
+  }
+
+  const functionNames = extractIntroducedFunctionNames(input.diff);
+  if (
+    functionNames.length === 0 ||
+    !functionNames.some((name) => isContextSensitiveFunctionName(name))
+  ) {
+    return false;
+  }
+
+  const hasSecurityOrConcurrencyFinding = input.candidates.some((candidate) =>
+    ["security", "concurrency", "performance"].includes(candidate.category),
+  );
+  if (hasSecurityOrConcurrencyFinding) {
+    return false;
+  }
+
+  return input.candidates.every((candidate) => {
+    const diffOnlyEvidence = candidate.evidenceRefs.every((ref) =>
+      ref.startsWith("diff:"),
+    );
+    return (
+      diffOnlyEvidence &&
+      candidate.severity !== "HIGH" &&
+      !containsHighRiskKeyword(candidate.title) &&
+      !containsHighRiskKeyword(candidate.message)
+    );
+  });
+}
+
+function shouldDowngradeWeaklyEvidencedSecondPass(input: {
+  diff: DiffParseResult;
+  firstPass: ReviewTriageDecision;
+  candidates: ReviewCommentCandidate[];
+}): boolean {
+  if (
+    !shouldDowngradeContextSensitiveConclusion({
+      diff: input.diff,
+      evidenceCoverage: input.firstPass.evidenceCoverage,
+      candidates: input.candidates.map((candidate) => ({
+        ...candidate,
+        evidenceRefs: candidate.evidenceRefs.filter((ref) =>
+          ref.startsWith("diff:"),
+        ),
+      })),
+    })
+  ) {
+    return false;
+  }
+
+  return input.candidates.every((candidate) =>
+    candidate.evidenceRefs.every(
+      (ref) =>
+        ref.startsWith("diff:") ||
+        /^context:(find_symbol_definition|read_file_snippet|find_callees):/.test(
+          ref,
+        ),
+    ),
+  );
+}
+
+function extractIntroducedFunctionNames(diff: DiffParseResult): string[] {
+  const names = new Set<string>();
+
+  for (const hunk of diff.hunks) {
+    for (const line of hunk.lines) {
+      if (line.lineType !== "add") {
+        continue;
+      }
+
+      const content = line.content.trim();
+      const matches = [
+        /^export function ([A-Za-z_$][\w$]*)/.exec(content),
+        /^function ([A-Za-z_$][\w$]*)/.exec(content),
+        /^export const ([A-Za-z_$][\w$]*)\s*=/.exec(content),
+        /^const ([A-Za-z_$][\w$]*)\s*=/.exec(content),
+      ];
+
+      for (const match of matches) {
+        if (match?.[1]) {
+          names.add(match[1]);
+        }
+      }
+    }
+  }
+
+  return [...names];
+}
+
+function isContextSensitiveFunctionName(name: string): boolean {
+  return /(audit|debug|internal|mock|preview|sample|example|test)/i.test(name);
+}
+
+function buildContextSensitiveRequest(
+  file: PullRequestFile,
+  diff: DiffParseResult,
+): ReviewTriageDecision["contextRequest"] {
+  const functionNames = extractIntroducedFunctionNames(diff);
+
+  return {
+    reason:
+      "需要确认新增辅助函数的调用方、路由暴露方式和真实数据来源后，才能判断它是占位实现、内部工具还是会进入正式业务链路。",
+    symbols: functionNames,
+    files: [file.filePath],
+    callersOf: functionNames.length > 0 ? functionNames : [file.filePath],
+    calleesOf: functionNames,
+    tests: functionNames.length > 0 ? functionNames : [file.filePath],
+    schemaTargets: functionNames,
+  };
+}
+
+function hasStrongContextEvidence(
+  candidates: ReviewCommentCandidate[],
+): boolean {
+  const strongEvidencePattern =
+    /^context:(find_callers|find_related_tests|find_schema_or_migration|read_config_or_feature_flag):/;
+  return candidates.some((candidate) =>
+    candidate.evidenceRefs.some((ref) => strongEvidencePattern.test(ref)),
+  );
+}
+
+function containsHighRiskKeyword(value: string): boolean {
+  return /(鉴权|权限|越权|泄露|伪造|管理员|admin|secret|token|绕过|注入|执行)/i.test(
+    value,
+  );
+}
+
+function isDocumentationFile(filePath: string): boolean {
+  return (
+    /(^|\/)(docs?|adr)\//i.test(filePath) ||
+    /\.(md|mdx|txt|rst)$/i.test(filePath)
+  );
 }
 
 function createEvidenceCoverage(hasRuleEvidence: boolean) {
