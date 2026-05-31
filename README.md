@@ -57,6 +57,18 @@ GitHub PR
 
 ## 🖼️ 效果展示
 
+### 🎬 演示视频
+
+完整演示视频：
+
+- [点击查看 AI PR Review 工作台演示视频](./docs/assets/demo/ai-pr-review-demo.m4v)
+
+也可以直接点击下图打开视频：
+
+[![AI PR Review 工作台演示视频封面](docs/assets/screenshots/review-overview-analyzing.png)](./docs/assets/demo/ai-pr-review-demo.m4v)
+
+---
+
 下面这 3 张截图对应的是当前工作台的核心使用视图：
 
 1. 审查进行中总览页：展示 PR 基本信息、进度条、风险统计、摘要和文件列表。
