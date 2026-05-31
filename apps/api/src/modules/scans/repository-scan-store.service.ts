@@ -133,6 +133,34 @@ export class RepositoryScanStoreService implements OnModuleDestroy {
     );
   }
 
+  async findLatestDoneByRepositoryId(
+    repositoryId: string,
+  ): Promise<RepositoryScan | null> {
+    return this.findOne(
+      `
+        select
+          id,
+          repository_id,
+          scan_type,
+          target_sha,
+          status,
+          language_summary,
+          framework_summary,
+          started_at,
+          finished_at,
+          created_at,
+          updated_at
+        from repository_scans
+        where repository_id = $1
+          and status = 'done'
+        order by finished_at desc nulls last, created_at desc
+        limit 1
+      `,
+      [repositoryId],
+      "查询最新已完成 repository_scans 记录失败",
+    );
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }

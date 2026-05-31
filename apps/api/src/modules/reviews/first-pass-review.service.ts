@@ -18,14 +18,18 @@ import {
 } from "@ai-pr-review/llm-gateway";
 import {
   FirstPassReviewRunResponseSchema,
+  type CreateReviewJobRequest,
+  type CreateReviewJobResponse,
   type ContextBudget,
   type ContextFetchResult,
   type FileReview,
   type HighestSeverity,
   type LlmCallLog,
+  type PullRequest,
   type ReviewAggregateResult,
   type ReviewComment,
   type ReviewCommentCandidate,
+  type ReviewJob,
   type RuleViolation,
   type ReviewRiskLevel,
   type ReviewTriageDecision,
@@ -43,9 +47,19 @@ import { LangsmithTraceService } from "./langsmith-trace.service.js";
 import { LlmCallLogStoreService } from "./llm-call-log-store.service.js";
 import { PullRequestStoreService } from "./pull-request-store.service.js";
 import { ReviewCommentStoreService } from "./review-comment-store.service.js";
+import { ReviewEventsService } from "./review-events.service.js";
 import { ReviewJobStoreService } from "./review-job-store.service.js";
 import { RuleEngineClientService } from "./rule-engine-client.service.js";
 import { withClonedRepository } from "./with-cloned-repository.js";
+
+type PreparedReviewRun = {
+  request: FirstPassReviewRunRequest;
+  startedAt: number;
+  repository: Awaited<ReturnType<RepositoryStoreService["findByRef"]>>;
+  persistedPullRequest: PullRequest;
+  reviewableFiles: PullRequest["files"];
+  reviewJob: ReviewJob;
+};
 
 @Injectable()
 export class FirstPassReviewService {
@@ -72,14 +86,39 @@ export class FirstPassReviewService {
     private readonly llmCallLogStoreService: LlmCallLogStoreService,
     @Inject(ReviewCommentStoreService)
     private readonly reviewCommentStoreService: ReviewCommentStoreService,
+    @Inject(ReviewEventsService)
+    private readonly reviewEventsService: ReviewEventsService,
     @Inject(LangsmithTraceService)
     private readonly langsmithTraceService: LangsmithTraceService,
   ) {}
 
+  async start(
+    request: CreateReviewJobRequest,
+  ): Promise<CreateReviewJobResponse> {
+    const prepared = await this.prepareRun(toFirstPassRunRequest(request));
+
+    setTimeout(() => {
+      void this.executeRun(prepared).catch((error) => {
+        console.error("review job background run failed", error);
+      });
+    }, 0);
+
+    return {
+      reviewJobId: prepared.reviewJob.id!,
+      status: prepared.reviewJob.status,
+    };
+  }
+
   async run(
     request: FirstPassReviewRunRequest,
   ): Promise<FirstPassReviewRunResponse> {
-    const startedAt = Date.now();
+    const prepared = await this.prepareRun(request);
+    return this.executeRun(prepared);
+  }
+
+  private async prepareRun(
+    request: FirstPassReviewRunRequest,
+  ): Promise<PreparedReviewRun> {
     const repository = await this.repositoryStoreService.findByRef(
       request.repository,
     );
@@ -91,7 +130,6 @@ export class FirstPassReviewService {
       repositoryId: repository?.id,
       pullRequest,
     });
-
     const reviewableFiles = persistedPullRequest.files.filter(
       (file) => typeof file.patch === "string" && file.patch.length > 0,
     );
@@ -104,6 +142,30 @@ export class FirstPassReviewService {
       llmProvider: this.configService.defaultLlmProvider,
       llmModel: this.configService.defaultLlmModel,
     });
+
+    this.publishReviewJobProgress(reviewJob);
+
+    return {
+      request,
+      startedAt: Date.now(),
+      repository,
+      persistedPullRequest,
+      reviewableFiles,
+      reviewJob,
+    };
+  }
+
+  private async executeRun(
+    prepared: PreparedReviewRun,
+  ): Promise<FirstPassReviewRunResponse> {
+    const {
+      request,
+      startedAt,
+      repository,
+      persistedPullRequest,
+      reviewableFiles,
+      reviewJob,
+    } = prepared;
     const reviewJobTrace = await this.langsmithTraceService.startRun({
       name: "review-job",
       runType: "chain",
@@ -166,7 +228,7 @@ export class FirstPassReviewService {
               } catch (error) {
                 await this.langsmithTraceService.endRun({
                   run: ruleScanTrace,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: this.getSafeErrorMessage(error),
                 });
                 throw error;
               }
@@ -228,6 +290,21 @@ export class FirstPassReviewService {
                     );
                   }
 
+                  const progressReviewJob =
+                    await this.reviewJobStoreService.markProgress({
+                      reviewJobId: reviewJob.id!,
+                      finishedFiles: fileReviews.length,
+                      finishedSlices: files.length,
+                      totalInputTokens,
+                      totalOutputTokens,
+                    });
+                  this.publishReviewJobProgress(progressReviewJob);
+                  this.publishFileReviewCompleted({
+                    reviewJobId: reviewJob.id!,
+                    fileReview: result.fileReview,
+                    comments: result.comments,
+                  });
+
                   await this.langsmithTraceService.endRun({
                     run: fileTrace,
                     outputs: {
@@ -245,8 +322,7 @@ export class FirstPassReviewService {
                 } catch (error) {
                   await this.langsmithTraceService.endRun({
                     run: fileTrace,
-                    error:
-                      error instanceof Error ? error.message : String(error),
+                    error: this.getSafeErrorMessage(error),
                   });
                   throw error;
                 }
@@ -262,6 +338,7 @@ export class FirstPassReviewService {
                   totalCostUsd: 0,
                   durationMs: Date.now() - startedAt,
                 });
+              this.publishReviewJobProgress(finishedReviewJob);
 
               const aggregateResult = buildReviewAggregateResult({
                 reviewJob: finishedReviewJob,
@@ -306,13 +383,14 @@ export class FirstPassReviewService {
       await this.langsmithTraceService.flush();
       return response;
     } catch (error) {
-      await this.reviewJobStoreService.markFailed(
+      const failedReviewJob = await this.reviewJobStoreService.markFailed(
         reviewJob.id!,
-        error instanceof Error ? error.message : String(error),
+        this.getSafeErrorMessage(error),
       );
+      this.publishReviewJobProgress(failedReviewJob);
       await this.langsmithTraceService.endRun({
         run: reviewJobTrace,
-        error: error instanceof Error ? error.message : String(error),
+        error: this.getSafeErrorMessage(error),
       });
       await this.langsmithTraceService.flush();
       throw error;
@@ -600,7 +678,7 @@ export class FirstPassReviewService {
     } catch (error) {
       await this.langsmithTraceService.endRun({
         run: contextPlanTrace,
-        error: error instanceof Error ? error.message : String(error),
+        error: this.getSafeErrorMessage(error),
       });
       return input.fallbackPlan;
     }
@@ -675,7 +753,7 @@ export class FirstPassReviewService {
     } catch (error) {
       await this.langsmithTraceService.endRun({
         run: contextTrace,
-        error: error instanceof Error ? error.message : String(error),
+        error: this.getSafeErrorMessage(error),
       });
       return {
         ...input.contextPlan,
@@ -867,6 +945,66 @@ export class FirstPassReviewService {
       },
     });
   }
+
+  private publishReviewJobProgress(reviewJob: ReviewJob) {
+    if (!reviewJob.id) {
+      return;
+    }
+
+    this.reviewEventsService.emitReviewJobProgress({
+      eventName: "review_job_progress",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        reviewJobId: reviewJob.id,
+        status: reviewJob.status,
+        finishedFiles: reviewJob.finishedFiles,
+        totalFiles: reviewJob.totalFiles,
+        finishedSlices: reviewJob.finishedSlices,
+        totalSlices: reviewJob.totalSlices,
+      },
+    });
+  }
+
+  private publishFileReviewCompleted(input: {
+    reviewJobId: string;
+    fileReview: FileReview;
+    comments: ReviewComment[];
+  }) {
+    this.reviewEventsService.emitFileReviewCompleted({
+      eventName: "file_review_completed",
+      occurredAt: new Date().toISOString(),
+      payload: {
+        reviewJobId: input.reviewJobId,
+        fileReview: input.fileReview,
+        comments: input.comments,
+      },
+    });
+  }
+
+  private getSafeErrorMessage(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    return message
+      .split(this.configService.githubToken)
+      .join("[REDACTED_GITHUB_TOKEN]")
+      .replace(
+        /(https?:\/\/)([^/\s:@]+):([^@\s]+)@/g,
+        "$1$2:[REDACTED_GITHUB_TOKEN]@",
+      )
+      .replace(/\bgh[opus]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]");
+  }
+}
+
+function toFirstPassRunRequest(
+  request: CreateReviewJobRequest,
+): FirstPassReviewRunRequest {
+  return {
+    repository: request.repository,
+    prNumber: request.prNumber,
+    triggerSource: request.triggerSource,
+    ruleScanTimeoutSeconds: 60,
+    ruleScanEngines: ["semgrep"],
+  };
 }
 
 function createDefaultFirstPassBudget(): ContextBudget {

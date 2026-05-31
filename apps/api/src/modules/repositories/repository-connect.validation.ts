@@ -35,11 +35,18 @@ async function validateFixtures() {
 }
 
 async function expectValidationFailure() {
-  const controller = new RepositoriesController({
-    connect: async () => {
-      throw new Error("不应该走到 service");
-    },
-  } as unknown as RepositoryConnectService);
+  const controller = new RepositoriesController(
+    {
+      connect: async () => {
+        throw new Error("不应该走到 service");
+      },
+    } as unknown as RepositoryConnectService,
+    {
+      getMap: async () => {
+        throw new Error("不应该走到 semantic map service");
+      },
+    } as never,
+  );
 
   try {
     await controller.connect({ owner: "", repo: "demo" });
@@ -51,19 +58,26 @@ async function expectValidationFailure() {
 }
 
 async function expectServiceFailure() {
-  const controller = new RepositoriesController({
-    connect: async () => {
-      throw new ApiModuleError(
-        "REPOSITORY_FORBIDDEN",
-        "当前 token 没有访问该仓库的权限",
-        403,
-        {
-          owner: "acme-inc",
-          repo: "private-repo",
-        },
-      );
-    },
-  } as unknown as RepositoryConnectService);
+  const controller = new RepositoriesController(
+    {
+      connect: async () => {
+        throw new ApiModuleError(
+          "REPOSITORY_FORBIDDEN",
+          "当前 token 没有访问该仓库的权限",
+          403,
+          {
+            owner: "acme-inc",
+            repo: "private-repo",
+          },
+        );
+      },
+    } as unknown as RepositoryConnectService,
+    {
+      getMap: async () => {
+        throw new Error("不应该走到 semantic map service");
+      },
+    } as never,
+  );
 
   try {
     await controller.connect({ owner: "acme-inc", repo: "private-repo" });
@@ -76,23 +90,30 @@ async function expectServiceFailure() {
 }
 
 async function expectSuccess() {
-  const controller = new RepositoriesController({
-    connect: async () =>
-      RepositoryConnectResponseSchema.parse({
-        repository: {
-          id: "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
-          provider: "github",
-          owner: "acme-inc",
-          repo: "payments-service",
-          defaultBranch: "main",
-          cloneUrl: "https://github.com/acme-inc/payments-service.git",
-          isActive: true,
-          createdAt: "2026-05-30T03:20:00.000Z",
-          updatedAt: "2026-05-30T03:20:00.000Z",
-        },
-        accepted: true,
-      }),
-  } as unknown as RepositoryConnectService);
+  const controller = new RepositoriesController(
+    {
+      connect: async () =>
+        RepositoryConnectResponseSchema.parse({
+          repository: {
+            id: "9fd5b4de-c438-44c3-b4ae-1d1fe667d4b7",
+            provider: "github",
+            owner: "acme-inc",
+            repo: "payments-service",
+            defaultBranch: "main",
+            cloneUrl: "https://github.com/acme-inc/payments-service.git",
+            isActive: true,
+            createdAt: "2026-05-30T03:20:00.000Z",
+            updatedAt: "2026-05-30T03:20:00.000Z",
+          },
+          accepted: true,
+        }),
+    } as unknown as RepositoryConnectService,
+    {
+      getMap: async () => {
+        throw new Error("不应该走到 semantic map service");
+      },
+    } as never,
+  );
 
   const response = await controller.connect({
     owner: "acme-inc",

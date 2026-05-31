@@ -723,6 +723,40 @@
 - `apps/api`
 - `apps/web`
 
+### 当前状态
+
+已完成真实验收：
+
+- `packages/shared-types` 已补齐正式读模型契约：
+  - `ReviewJobDetailResponse`
+  - `ReviewJobFilesResponse`
+  - `ReviewJobCommentsResponse`
+  - `ReviewJobFileView`
+- `apps/api` 已新增正式查询接口：
+  - `POST /api/review-jobs`
+  - `GET /api/review-jobs/:id`
+  - `GET /api/review-jobs/:id/files`
+  - `GET /api/review-jobs/:id/comments`
+  - `GET /api/repositories/:repositoryId/semantic-map`
+- `apps/api` 已新增 `ReviewEventsGateway` 与 `ReviewEventsService`，支持：
+  - `review_job_progress`
+  - `file_review_completed`
+- `apps/web` 已切到正式 query API 读模型，不再依赖临时 `review-tools/first-pass` 接口展示主页面。
+- Web 工作台已完成：
+  - PR 概览
+  - AI Summary
+  - Risk Panel
+  - File Reviews
+  - Final Recommendation
+  - Diff Viewer 抽屉
+  - evidence chain 展示
+  - 点击文件 / 点击评论联动
+  - pending 骨架态
+- 联调阶段额外补齐：
+  - `WebSocket + 5s polling fallback` 双轨更新
+  - 公开仓库 clone 失败自动回退到公开 URL
+  - review job 失败信息中的 GitHub token 脱敏，避免泄露到数据库、LangSmith 和前端
+
 ### 具体开发步骤
 
 1. 新增 review job 查询接口：
@@ -748,6 +782,29 @@
 - 前端能实时看到 review 进度。
 - 评论与 diff 行定位联动稳定。
 - 页面展示对象全部来自正式 query API，不靠临时拼装。
+
+### 实际验收
+
+- 已通过：
+  - `npm run check --workspace=@ai-pr-review/api`
+  - `npm run check --workspace=@ai-pr-review/web`
+- 真实 query API 验收已通过：
+  - `GET /api/review-jobs/:id`
+  - `GET /api/review-jobs/:id/files`
+  - `GET /api/review-jobs/:id/comments`
+- 真实 semantic map 验收已通过：
+  - `GET /api/repositories/f540c902-3bc5-4d4a-8ce6-6ff9f0ed04a9/semantic-map`
+  - 当前真实返回包含 `620` 个 symbols、`260` 条 edges
+- 真实浏览器 smoke 已通过：
+  - `http://localhost:3000/` 可正常加载，无新的应用级 console error
+  - 真实任务 `8523d43b-41f7-4a1e-987f-ed727c401153` 已从 `0/18` 推进到 `6/18`
+  - 历史真实完成任务 `e4fde163-b9e0-4102-8237-05b7a37f6dd3`、`1cd2ec57-b106-4135-881f-9c5232290329` 已完成 `18/18`
+  - 已验证点击高风险评论后，Diff Viewer 会切换到 `packages/review-core/src/review-aggregation.ts`
+
+### 与原计划差异
+
+- 实时更新没有只依赖 WebSocket，而是采用 `WebSocket + 5s polling fallback`，降低本地开发环境下连接抖动对 UI 的影响。
+- 在 UI 联调阶段发现真实 clone 失败会把带凭证 URL 暴露给前端，因此额外补了 clone fallback 与错误脱敏；这是 M10 联调质量保障的一部分，不改变主契约。
 
 ### LangSmith
 

@@ -2,19 +2,22 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpException,
   HttpStatus,
   Inject,
+  Param,
   Post,
 } from "@nestjs/common";
 import {
   ApiErrorResponseSchema,
   RepositoryConnectRequestSchema,
 } from "@ai-pr-review/shared-types";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { ApiModuleError } from "./api-error.js";
 import { RepositoryConnectService } from "./repository-connect.service.js";
+import { RepositorySemanticMapService } from "./repository-semantic-map.service.js";
 
 function toBadRequest(error: unknown): BadRequestException {
   if (error instanceof ZodError) {
@@ -57,6 +60,8 @@ export class RepositoriesController {
   constructor(
     @Inject(RepositoryConnectService)
     private readonly repositoryConnectService: RepositoryConnectService,
+    @Inject(RepositorySemanticMapService)
+    private readonly repositorySemanticMapService: RepositorySemanticMapService,
   ) {}
 
   @Post("connect")
@@ -65,6 +70,23 @@ export class RepositoriesController {
     try {
       const request = RepositoryConnectRequestSchema.parse(body);
       return await this.repositoryConnectService.connect(request);
+    } catch (error) {
+      if (error instanceof ApiModuleError) {
+        throw new HttpException(error.toResponse(), error.statusCode);
+      }
+
+      throw toBadRequest(error);
+    }
+  }
+
+  @Get(":repositoryId/semantic-map")
+  async getSemanticMap(@Param("repositoryId") repositoryId: string) {
+    try {
+      const parsedRepositoryId = z
+        .string()
+        .uuid("repositoryId 必须是合法 UUID")
+        .parse(repositoryId);
+      return await this.repositorySemanticMapService.getMap(parsedRepositoryId);
     } catch (error) {
       if (error instanceof ApiModuleError) {
         throw new HttpException(error.toResponse(), error.statusCode);

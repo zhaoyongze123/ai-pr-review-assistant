@@ -7,6 +7,7 @@ import { ApiConfigService } from "./modules/repositories/api-config.service.js";
 import { GitHubClientService } from "./modules/repositories/github-client.service.js";
 import { RepositoriesController } from "./modules/repositories/repositories.controller.js";
 import { RepositoryConnectService } from "./modules/repositories/repository-connect.service.js";
+import { RepositorySemanticMapService } from "./modules/repositories/repository-semantic-map.service.js";
 import { RepositoryStoreService } from "./modules/repositories/repository-store.service.js";
 import { CommentAdmissionGateService } from "./modules/quality-gates/comment-admission-gate.service.js";
 import { QualityScoringService } from "./modules/quality-gates/quality-scoring.service.js";
@@ -15,8 +16,12 @@ import { FileReviewStoreService } from "./modules/reviews/file-review-store.serv
 import { LangsmithTraceService } from "./modules/reviews/langsmith-trace.service.js";
 import { LlmCallLogStoreService } from "./modules/reviews/llm-call-log-store.service.js";
 import { PullRequestStoreService } from "./modules/reviews/pull-request-store.service.js";
+import { ReviewEventsGateway } from "./modules/reviews/review-events.gateway.js";
+import { ReviewEventsService } from "./modules/reviews/review-events.service.js";
+import { ReviewJobsController } from "./modules/reviews/review-jobs.controller.js";
 import { ReviewCommentStoreService } from "./modules/reviews/review-comment-store.service.js";
 import { ReviewJobStoreService } from "./modules/reviews/review-job-store.service.js";
+import { ReviewQueryService } from "./modules/reviews/review-query.service.js";
 import { RuleEngineClientService } from "./modules/reviews/rule-engine-client.service.js";
 import { SemanticRetrievalController } from "./modules/retrieval/semantic-retrieval.controller.js";
 import { SemanticRetrievalService } from "./modules/retrieval/semantic-retrieval.service.js";
@@ -33,6 +38,7 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
   controllers: [
     HealthController,
     ReviewToolsController,
+    ReviewJobsController,
     RepositoriesController,
     RepositoryScansController,
     SemanticRetrievalController,
@@ -50,9 +56,13 @@ import { ReviewTriageService } from "./modules/triage/review-triage.service.js";
     LlmCallLogStoreService,
     PullRequestStoreService,
     RepositoryConnectService,
+    RepositorySemanticMapService,
     ReviewCommentStoreService,
+    ReviewEventsGateway,
+    ReviewEventsService,
     RuleEngineClientService,
     ReviewJobStoreService,
+    ReviewQueryService,
     SemanticRetrievalService,
     SemanticRetrievalStoreService,
     RepositoryScanEventStoreService,

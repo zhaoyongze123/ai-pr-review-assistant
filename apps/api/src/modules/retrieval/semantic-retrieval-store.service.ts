@@ -102,6 +102,59 @@ export class SemanticRetrievalStoreService implements OnModuleDestroy {
     }
   }
 
+  async listLatestDocuments(repositoryId: string): Promise<SemanticDocument[]> {
+    try {
+      const result = await this.pool.query<SemanticDocumentRow>(
+        `
+          select
+            id,
+            repository_id,
+            scan_id,
+            source_path,
+            document_type,
+            chunk_index,
+            title,
+            module_name,
+            content,
+            tags,
+            metadata
+          from semantic_documents
+          where repository_id = $1
+            and scan_id = (
+              select id
+              from repository_scans
+              where repository_id = $1
+                and status = 'done'
+              order by finished_at desc nulls last, created_at desc
+              limit 1
+            )
+          order by source_path asc, chunk_index asc
+        `,
+        [repositoryId],
+      );
+
+      return result.rows.map((row) =>
+        SemanticDocumentSchema.parse({
+          id: row.id,
+          repositoryId: row.repository_id,
+          scanId: row.scan_id,
+          sourcePath: row.source_path,
+          documentType: row.document_type,
+          chunkIndex: row.chunk_index,
+          title: row.title ?? undefined,
+          moduleName: row.module_name ?? undefined,
+          content: row.content,
+          tags: row.tags ?? [],
+          metadata: row.metadata ?? {},
+        }),
+      );
+    } catch (error) {
+      throw new ApiModuleError("DATABASE_ERROR", "读取语义语料快照失败", 500, {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }
