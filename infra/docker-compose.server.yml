@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ai-pr-review-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ai-pr-review-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - 127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: ai-pr-review-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ai-pr-review-redis-data:/data
+    ports:
+      - 127.0.0.1:${REDIS_HOST_PORT:-56379}:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rule-engine:
+    image: ${RULE_ENGINE_IMAGE}
+    container_name: ai-pr-review-rule-engine
+    restart: unless-stopped
+    environment:
+      RULE_ENGINE_PORT: 58001
+      TMPDIR: /tmp/ai-pr-review-runtime
+    # API 与 rule-engine 共享同一块 TMPDIR，保证 HTTP 传递的 repositoryPath
+    # 在跨容器规则扫描时仍然可见。
+    volumes:
+      - ai-pr-review-shared-tmp:/tmp/ai-pr-review-runtime
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:58001/health').read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ${API_IMAGE}
+    container_name: ai-pr-review-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rule-engine:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      RULE_ENGINE_URL: http://rule-engine:58001
+      LLM_API_BASE: ${LLM_API_BASE}
+      LLM_API_KEY: ${LLM_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ai-pr-review-assistant}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_WORKSPACE_ID: ${LANGSMITH_WORKSPACE_ID:-}
+      TMPDIR: /tmp/ai-pr-review-runtime
+    volumes:
+      - ai-pr-review-shared-tmp:/tmp/ai-pr-review-runtime
+    ports:
+      - 127.0.0.1:${API_HOST_PORT:-35001}:3001
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3001/api/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    image: ${WORKER_IMAGE}
+    container_name: ai-pr-review-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      TMPDIR: /tmp/ai-pr-review-runtime
+
+  web:
+    image: ${WEB_IMAGE}
+    container_name: ai-pr-review-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # 宿主机 nginx 负责公网域名入口，web 容器只暴露到本机回环地址。
+      - ${WEB_HOST_BIND:-127.0.0.1}:${WEB_HOST_PORT:-35000}:80
+
+volumes:
+  ai-pr-review-postgres-data:
+  ai-pr-review-redis-data:
+  ai-pr-review-shared-tmp:
