@@ -1017,3 +1017,22 @@
 - LangSmith 只做观测和评估，不做业务主依赖
 
 如果一个模块实现让这四点变差，应当回退设计，而不是强行推进。
+
+## 11. 部署自动化补充
+
+### 当前状态
+
+已补充基于 `GitHub Actions + GHCR + 远端 docker compose` 的镜像发布与部署方案。
+
+### 实施边界
+
+- GitHub Actions 只负责构建镜像和远端部署，不在 workflow 中跑测试。
+- 服务器只保留镜像、`docker-compose.yml`、`.env` 和数据卷，不保留源码。
+- 服务发布通过更新服务器 `.env` 里的镜像 tag，再执行 `docker compose pull && docker compose up -d` 完成。
+
+### 相关真源
+
+- `.github/workflows/build-and-deploy.yml`
+- `infra/scripts/remote-deploy.sh`
+- `infra/server.env.example`
+- `docs/deployment.md`

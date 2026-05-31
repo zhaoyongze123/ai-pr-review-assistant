@@ -2,6 +2,8 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 ENV HTTP_PROXY=
 ENV HTTPS_PROXY=
 ENV ALL_PROXY=
@@ -24,7 +26,7 @@ COPY services ./services
 
 RUN npm config set proxy "" \
   && npm config set https-proxy "" \
-  && npm config set registry "https://registry.npmmirror.com"
+  && npm config set registry "${NPM_REGISTRY}"
 RUN npm install
 
 ARG SERVICE_PATH

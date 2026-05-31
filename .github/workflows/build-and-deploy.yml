@@ -1,0 +1,127 @@
+name: 构建镜像并部署服务器
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ai-pr-review-production-deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  prepare:
+    name: 计算镜像标签
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - name: 生成短 SHA 镜像标签
+        id: vars
+        run: echo "image_tag=sha-${GITHUB_SHA::12}" >>"$GITHUB_OUTPUT"
+
+  build-and-push:
+    name: 构建并推送 ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            image_name: ai-pr-review-api
+            dockerfile: infra/docker/node-service.Dockerfile
+            build_args: |
+              SERVICE_PATH=apps/api/src/main.ts
+              TSCONFIG_PATH=apps/api/tsconfig.json
+              NPM_REGISTRY=https://registry.npmjs.org
+          - service: worker
+            image_name: ai-pr-review-worker
+            dockerfile: infra/docker/node-service.Dockerfile
+            build_args: |
+              SERVICE_PATH=apps/worker/src/main.ts
+              TSCONFIG_PATH=apps/worker/tsconfig.json
+              NPM_REGISTRY=https://registry.npmjs.org
+          - service: web
+            image_name: ai-pr-review-web
+            dockerfile: infra/docker/web.Dockerfile
+            build_args: |
+              NPM_REGISTRY=https://registry.npmjs.org
+          - service: rule-engine
+            image_name: ai-pr-review-rule-engine
+            dockerfile: infra/docker/rule-engine.Dockerfile
+            build_args: ""
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image_name }}:${{ needs.prepare.outputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image_name }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.image_name }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: 更新服务器并重启容器
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://pr.zyzsharehub.cn/
+    steps:
+      - name: 拉取仓库代码
+        uses: actions/checkout@v4
+
+      - name: 安装 SSH 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: 远端部署
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_PASSWORD: ${{ secrets.SERVER_SSH_PASSWORD }}
+          SERVER_DEPLOY_DIR: ${{ secrets.SERVER_DEPLOY_DIR }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+        run: bash infra/scripts/remote-deploy.sh

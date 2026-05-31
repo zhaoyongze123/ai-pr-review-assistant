@@ -409,6 +409,25 @@ npm run dev --workspace=@ai-pr-review/web
 
 ---
 
+## 🚢 生产部署
+
+当前线上地址：
+
+- [https://pr.zyzsharehub.cn/](https://pr.zyzsharehub.cn/)
+
+当前部署策略：
+
+- GitHub Actions 构建 `api / worker / web / rule-engine` 四个 `linux/amd64` 镜像
+- 镜像推送到 `GHCR`
+- 服务器只保存 `docker-compose.yml`、`.env` 和数据卷
+- GitHub Actions 通过 SSH 更新服务器 `.env` 中的镜像 tag，然后执行 `docker compose pull && docker compose up -d`
+
+部署说明和所需 Secrets 见：
+
+- [镜像构建与服务器部署](./docs/deployment.md)
+
+---
+
 ## 🧪 常用验证命令
 
 ### 全仓检查
@@ -478,6 +497,7 @@ npm run smoke:langsmith-trace --workspace=@ai-pr-review/api
 - [数据库结构说明](./docs/contracts/database-schema.md)
 - [开发计划](./docs/development-plan.md)
 - [执行清单](./docs/development-checklist.md)
+- [镜像构建与服务器部署](./docs/deployment.md)
 - [仓库级开发规范](./AGENTS.md)
 
 ---
