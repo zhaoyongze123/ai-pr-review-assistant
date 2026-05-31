@@ -422,6 +422,45 @@ npm run dev --workspace=@ai-pr-review/web
 - 服务器只保存 `docker-compose.yml`、`.env` 和数据卷
 - GitHub Actions 通过 SSH 更新服务器 `.env` 中的镜像 tag，然后执行 `docker compose pull && docker compose up -d`
 
+### GitHub Actions 工作流
+
+- 工作流文件：
+  - [`.github/workflows/build-and-deploy.yml`](./.github/workflows/build-and-deploy.yml)
+- 触发条件：
+  - `push main`
+  - `workflow_dispatch`
+- 工作流阶段：
+  - `prepare`：生成 `sha-<12位提交SHA>` 镜像标签
+  - `build-and-push`：并行构建并推送 4 个服务镜像到 GHCR
+  - `deploy`：SSH 登录服务器，更新 `.env` 里的镜像 tag，执行 `docker compose pull && docker compose up -d`
+- 服务器部署目录：
+  - `/opt/ai-pr-review-assistant`
+- 当前生产域名：
+  - [https://pr.zyzsharehub.cn/](https://pr.zyzsharehub.cn/)
+
+### GitHub Secrets
+
+工作流依赖以下仓库级 Secrets：
+
+- `SERVER_HOST`
+- `SERVER_PORT`
+- `SERVER_USER`
+- `SERVER_SSH_PASSWORD`
+- `SERVER_DEPLOY_DIR`
+- `GHCR_USERNAME`
+- `GHCR_READ_TOKEN`
+
+### 最近一次真实验收
+
+- PR 合并后已自动触发 workflow
+- 4 个 GHCR 镜像构建与推送成功
+- 服务器已切换到 `sha-da2cbac42f47` 版本镜像
+- 验证结果：
+  - `http://127.0.0.1:35001/api/health` 返回 `{"status":"ok"}`
+  - [https://pr.zyzsharehub.cn/](https://pr.zyzsharehub.cn/) 返回 `HTTP 200`
+- 对应运行记录：
+  - [Actions Run #26713905402](https://github.com/zhaoyongze123/ai-pr-review-assistant/actions/runs/26713905402)
+
 部署说明和所需 Secrets 见：
 
 - [镜像构建与服务器部署](./docs/deployment.md)
