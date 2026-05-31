@@ -33,7 +33,7 @@
 | M7 首轮审查与 Triage                    | 已完成                                | M0, M5, M6     | P1         |
 | M8 上下文检索与二轮审查                 | 已完成                                | M0, M3, M4, M7 | 已完成     |
 | M9 评论准入、质量评分与聚合             | 已完成                                | M0, M7, M8     | 已完成     |
-| M10 API 查询面与 Web 工作台             | 待开发                                | M0, M5, M9     | P2         |
+| M10 API 查询面与 Web 工作台             | 已完成                                | M0, M5, M9     | 已完成     |
 | M11 GitHub 回写                         | 待开发                                | M0, M9         | P2         |
 | M12 Observability、LangSmith 与评估回归 | 部分完成，已验收到 gate/summary trace | M7, M8, M9     | P2         |
 
@@ -424,26 +424,31 @@
 
 ## M10. API 查询面与 Web 工作台
 
+### 当前判断
+
+已完成：正式 query API、语义地图查询接口、WebSocket 推送、Web 工作台主界面、Diff Viewer、evidence chain、点击联动与 `5s polling fallback` 已全部落地。
+联调阶段额外补齐了公开仓库 clone fallback 与错误脱敏，避免真实失败场景把 GitHub token 泄露到 UI。
+
 ### Issue 清单
 
-- [ ] 新增 review job 查询接口
-- [ ] 新增 file reviews 查询接口
-- [ ] 新增 review comments 查询接口
-- [ ] 新增 semantic map 查询接口
-- [ ] 接入 WebSocket 事件
-- [ ] 前端新增仓库接入页
-- [ ] 前端新增 PR 审查页
-- [ ] 前端实现文件列表
-- [ ] 前端实现 Diff Viewer
-- [ ] 前端实现评论面板
-- [ ] 前端实现评论与 diff 联动
-- [ ] 前端实现 evidence chain 展示
+- [x] 新增 review job 查询接口
+- [x] 新增 file reviews 查询接口
+- [x] 新增 review comments 查询接口
+- [x] 新增 semantic map 查询接口
+- [x] 接入 WebSocket 事件
+- [x] 前端新增仓库接入页
+- [x] 前端新增 PR 审查页
+- [x] 前端实现文件列表
+- [x] 前端实现 Diff Viewer
+- [x] 前端实现评论面板
+- [x] 前端实现评论与 diff 联动
+- [x] 前端实现 evidence chain 展示
 
 ### 最小验证
 
-- [ ] 可从 UI 提交仓库和 PR
-- [ ] review 进度可实时更新
-- [ ] 评论点击能定位到 diff 行
+- [x] 可从 UI 提交仓库和 PR
+- [x] review 进度可实时更新
+- [x] 评论点击能定位到 diff 行
 
 ### 模块完成定义
 
@@ -452,7 +457,16 @@
 
 ### LangSmith
 
-- [ ] 不直接接入业务展示
+- [x] 不直接接入业务展示
+
+### 验收说明
+
+- [x] `npm run check --workspace=@ai-pr-review/api`
+- [x] `npm run check --workspace=@ai-pr-review/web`
+- [x] 真实 `GET /api/repositories/:repositoryId/semantic-map` 已返回 `620` 个 symbols、`260` 条 edges
+- [x] 浏览器访问 `http://localhost:3000/` 成功，真实任务 `8523d43b-41f7-4a1e-987f-ed727c401153` 已从 `0/18` 推进到 `6/18`，且无新的应用级 console error
+- [x] 历史真实完成任务 `e4fde163-b9e0-4102-8237-05b7a37f6dd3`、`1cd2ec57-b106-4135-881f-9c5232290329` 已完成 `18/18`
+- [x] 浏览器真实 smoke 已验证点击高风险评论后，Diff Viewer 会切换到 `packages/review-core/src/review-aggregation.ts`
 
 ## M11. GitHub 回写
 

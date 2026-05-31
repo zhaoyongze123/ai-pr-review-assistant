@@ -118,6 +118,31 @@ export class FileReviewStoreService implements OnModuleDestroy {
     );
   }
 
+  async findByReviewJobId(reviewJobId: string): Promise<FileReview[]> {
+    try {
+      const result = await this.pool.query<FileReviewRow>(
+        `
+          select *
+          from file_reviews
+          where review_job_id = $1
+          order by risk_score desc, file_path asc
+        `,
+        [reviewJobId],
+      );
+
+      return result.rows.map((row) => this.toFileReview(row));
+    } catch (error) {
+      throw new ApiModuleError(
+        "DATABASE_ERROR",
+        "查询 file_reviews 表失败",
+        500,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }

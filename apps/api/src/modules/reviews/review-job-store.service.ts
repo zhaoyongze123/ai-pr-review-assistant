@@ -85,6 +85,52 @@ export class ReviewJobStoreService implements OnModuleDestroy {
     );
   }
 
+  async findById(reviewJobId: string): Promise<ReviewJob | null> {
+    return this.findOne(
+      `
+        select *
+        from review_jobs
+        where id = $1
+      `,
+      [reviewJobId],
+      "查询 review_jobs 记录失败",
+    );
+  }
+
+  async markProgress(input: {
+    reviewJobId: string;
+    finishedFiles: number;
+    finishedSlices: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCostUsd?: number;
+  }): Promise<ReviewJob> {
+    return this.queryOne(
+      `
+        update review_jobs
+        set
+          status = 'running',
+          finished_files = $2,
+          finished_slices = $3,
+          total_input_tokens = $4,
+          total_output_tokens = $5,
+          total_cost_usd = $6,
+          updated_at = now()
+        where id = $1
+        returning *
+      `,
+      [
+        input.reviewJobId,
+        input.finishedFiles,
+        input.finishedSlices,
+        input.totalInputTokens,
+        input.totalOutputTokens,
+        input.totalCostUsd ?? 0,
+      ],
+      "更新 review_jobs 进度失败",
+    );
+  }
+
   async markDone(input: {
     reviewJobId: string;
     finishedFiles: number;
@@ -142,6 +188,24 @@ export class ReviewJobStoreService implements OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.pool.end();
+  }
+
+  private async findOne(
+    sql: string,
+    values: unknown[],
+    errorMessage: string,
+  ): Promise<ReviewJob | null> {
+    try {
+      const result = await this.pool.query<ReviewJobRow>(sql, values);
+      if (!result.rowCount || !result.rows[0]) {
+        return null;
+      }
+      return this.toReviewJob(result.rows[0]);
+    } catch (error) {
+      throw new ApiModuleError("DATABASE_ERROR", errorMessage, 500, {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async queryOne(

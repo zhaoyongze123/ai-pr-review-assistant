@@ -56,6 +56,38 @@ export class ReviewCommentStoreService implements OnModuleDestroy {
     return created;
   }
 
+  async findByReviewJobId(reviewJobId: string): Promise<ReviewComment[]> {
+    try {
+      const result = await this.pool.query<ReviewCommentRow>(
+        `
+          select *
+          from review_comments
+          where review_job_id = $1
+          order by
+            case severity
+              when 'HIGH' then 0
+              when 'MEDIUM' then 1
+              when 'LOW' then 2
+              else 3
+            end asc,
+            created_at asc
+        `,
+        [reviewJobId],
+      );
+
+      return result.rows.map((row) => this.toReviewComment(row));
+    } catch (error) {
+      throw new ApiModuleError(
+        "DATABASE_ERROR",
+        "查询 review_comments 表失败",
+        500,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }

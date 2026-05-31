@@ -216,6 +216,8 @@ export const ApiErrorCodeSchema = z.enum([
   "REPOSITORY_NOT_FOUND",
   "REPOSITORY_FORBIDDEN",
   "SCAN_NOT_FOUND",
+  "PULL_REQUEST_NOT_FOUND",
+  "REVIEW_JOB_NOT_FOUND",
   "DATABASE_ERROR",
   "REDIS_ERROR",
   "INTERNAL_ERROR",
@@ -842,6 +844,39 @@ export const ReviewAggregateResultSchema = z.object({
   summary: PRSummarySchema,
 });
 export type ReviewAggregateResult = z.infer<typeof ReviewAggregateResultSchema>;
+
+// 正式查询面契约。前端应通过这些响应读取审查结果，而不是直接消费临时运行态对象。
+export const ReviewJobFileViewSchema = z.object({
+  fileReview: FileReviewSchema,
+  pullRequestFile: PullRequestFileSchema,
+  diff: DiffParseResultSchema.optional(),
+});
+export type ReviewJobFileView = z.infer<typeof ReviewJobFileViewSchema>;
+
+export const ReviewJobDetailResponseSchema = z.object({
+  reviewJob: ReviewJobSchema,
+  pullRequest: PullRequestSchema,
+  summary: PRSummarySchema.optional(),
+});
+export type ReviewJobDetailResponse = z.infer<
+  typeof ReviewJobDetailResponseSchema
+>;
+
+export const ReviewJobFilesResponseSchema = z.object({
+  reviewJobId: UuidSchema,
+  files: z.array(ReviewJobFileViewSchema).default([]),
+});
+export type ReviewJobFilesResponse = z.infer<
+  typeof ReviewJobFilesResponseSchema
+>;
+
+export const ReviewJobCommentsResponseSchema = z.object({
+  reviewJobId: UuidSchema,
+  comments: z.array(ReviewCommentSchema).default([]),
+});
+export type ReviewJobCommentsResponse = z.infer<
+  typeof ReviewJobCommentsResponseSchema
+>;
 
 // 实时事件契约。前端只订阅这些边界稳定的消息，不直接依赖内部任务对象。
 export const ReviewJobProgressEventSchema = z.object({

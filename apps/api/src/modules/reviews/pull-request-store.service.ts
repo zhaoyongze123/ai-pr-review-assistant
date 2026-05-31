@@ -140,6 +140,53 @@ export class PullRequestStoreService implements OnModuleDestroy {
     }
   }
 
+  async findById(pullRequestId: string): Promise<PullRequest | null> {
+    try {
+      const result = await this.pool.query<PullRequestRow>(
+        `
+          select
+            id,
+            repository_id,
+            provider,
+            owner,
+            repo,
+            pr_number,
+            title,
+            author_login,
+            base_branch,
+            head_branch,
+            base_sha,
+            head_sha,
+            changed_files,
+            additions,
+            deletions,
+            state,
+            raw_payload,
+            created_at,
+            updated_at
+          from pull_requests
+          where id = $1
+        `,
+        [pullRequestId],
+      );
+
+      if (!result.rowCount || !result.rows[0]) {
+        return null;
+      }
+
+      return this.toPullRequest(result.rows[0]);
+    } catch (error) {
+      throw new ApiModuleError(
+        "DATABASE_ERROR",
+        "查询 pull_requests 表失败",
+        500,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }
