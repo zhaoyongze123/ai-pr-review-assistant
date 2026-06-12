@@ -244,6 +244,9 @@ export class FirstPassReviewService {
                   outputs: {
                     violationCount: ruleScan.violations.length,
                     failureCount: ruleScan.failures.length,
+                    failureMessages: ruleScan.failures.map(
+                      (failure) => `${failure.engine}: ${failure.message}`,
+                    ),
                   },
                 });
               } catch (error) {

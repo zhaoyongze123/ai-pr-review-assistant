@@ -135,20 +135,23 @@ flowchart LR
 
 ## 🔄 核心流程
 
-### 1. 仓库接入与语义地图构建
+### 1. `PR URL` 触发的仓库预热与语义地图构建
 
 ```mermaid
 flowchart TD
-    A["输入 GitHub 仓库 owner/repo"] --> B["POST /api/repositories/connect"]
-    B --> C["保存 repository 记录"]
-    C --> D["POST /api/repositories/:id/scan"]
-    D --> E["BullMQ 投递扫描任务"]
-    E --> F["Worker 拉取默认分支代码"]
-    F --> G["结构化索引提取<br/>files / symbols / edges"]
-    F --> H["语义文档提取<br/>README / docs / ADR / module summary"]
-    G --> I["写入 PostgreSQL"]
-    H --> I
-    I --> J["形成 Repository Intelligence"]
+    A["输入 GitHub PR URL"] --> B["解析 owner / repo / prNumber"]
+    B --> C["POST /api/repositories/connect"]
+    C --> D["保存 repository 记录"]
+    D --> E{"当前 headSha 是否已有可用 scan"}
+    E -- 否 --> F["POST /api/repositories/:id/scan"]
+    F --> G["BullMQ 投递扫描任务"]
+    G --> H["Worker 拉取默认分支代码"]
+    H --> I["结构化索引提取<br/>files / symbols / edges"]
+    H --> J["语义文档提取<br/>README / docs / ADR / module summary"]
+    I --> K["写入 PostgreSQL"]
+    J --> K
+    K --> L["形成 Repository Intelligence"]
+    E -- 是 --> L
 ```
 
 ### 2. PR 审查主流程
@@ -156,22 +159,23 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["输入 GitHub PR URL"] --> B["POST /api/review-jobs"]
-    B --> C["拉取 PR 元信息与 patch"]
-    C --> D["Diff Core 解析 patch"]
-    D --> E["Rule Engine 扫描"]
-    E --> F["First-pass Triage"]
-    F --> G{"证据足够吗？"}
-    G -- 是 --> H["直接进入评论候选"]
-    G -- 否 --> I["生成 ContextRequest"]
-    I --> J["抓取 definition / caller / callee / test / schema / config"]
-    J --> K["必要时补 semantic docs"]
-    K --> L["Second-pass Review"]
-    H --> M["Comment Admission Gate"]
-    L --> M
-    M --> N["Quality Scoring"]
-    N --> O["Review Aggregate Result"]
-    O --> P["PR Summary / File Reviews / Inline Comments"]
-    O --> Q["WebSocket 推送进度与文件完成事件"]
+    B --> C["自动接入仓库并检查 scan 是否可用"]
+    C --> D["拉取 PR 元信息与 patch"]
+    D --> E["Diff Core 解析 patch"]
+    E --> F["Rule Engine 扫描"]
+    F --> G["First-pass Triage"]
+    G --> H{"证据足够吗？"}
+    H -- 是 --> I["直接进入评论候选"]
+    H -- 否 --> J["生成 ContextRequest"]
+    J --> K["抓取 definition / caller / callee / test / schema / config"]
+    K --> L["必要时补 semantic docs"]
+    L --> M["Second-pass Review"]
+    I --> N["Comment Admission Gate"]
+    M --> N
+    N --> O["Quality Scoring"]
+    O --> P["Review Aggregate Result"]
+    P --> Q["PR Summary / File Reviews / Inline Comments"]
+    P --> R["WebSocket 推送进度与文件完成事件"]
 ```
 
 ### 3. 审查决策状态机

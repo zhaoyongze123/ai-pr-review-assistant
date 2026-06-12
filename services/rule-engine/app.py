@@ -7,6 +7,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import tempfile
 
+DEFAULT_SEMGREP_CONFIG = (
+    Path(__file__).resolve().parent / "default-semgrep.yml"
+)
+
 
 def severity_from_semgrep(value):
     severity = str(value or "").upper()
@@ -82,16 +86,42 @@ def normalize_eslint(payload):
 
 
 def run_command(command, cwd, timeout):
+    env = os.environ.copy()
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "NPM_CONFIG_PROXY",
+        "NPM_CONFIG_HTTPS_PROXY",
+        "npm_config_proxy",
+        "npm_config_https_proxy",
+    ):
+        if env.get(key, "") == "":
+            env.pop(key, None)
+
     completed = subprocess.run(
         command,
         cwd=cwd,
+        env=env,
         text=True,
         capture_output=True,
         timeout=timeout,
         check=False,
     )
-    stdout = completed.stdout.strip() or "[]"
-    return completed.returncode, json.loads(stdout), completed.stderr.strip()
+    return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
+
+
+def parse_json_output(raw_output, fallback):
+    if not raw_output:
+        return fallback
+
+    try:
+        return json.loads(raw_output)
+    except json.JSONDecodeError:
+        return fallback
 
 
 def resolve_executable(name):
@@ -113,7 +143,7 @@ def build_semgrep_command(configs):
         "--json",
         "--no-rewrite-rule-ids",
     ]
-    resolved_configs = configs or ["auto"]
+    resolved_configs = configs or [str(DEFAULT_SEMGREP_CONFIG)]
     for config in resolved_configs:
         command.extend(["--config", config])
     command.append(".")
@@ -180,14 +210,21 @@ def run_scan(repository_path, files, engines, timeout, semgrep_configs=None, mod
             if semgrep_executable:
                 try:
                     configs = collect_semgrep_configs(root, semgrep_configs, module_rule_configs)
-                    return_code, payload, stderr = run_command(
+                    return_code, stdout, stderr = run_command(
                         build_semgrep_command(configs),
                         root,
                         timeout,
                     )
+                    payload = parse_json_output(stdout, {"results": []})
                     results.extend(normalize_semgrep(payload))
                     if return_code != 0:
-                        failures.append({"engine": "semgrep", "message": stderr})
+                        failures.append(
+                            {
+                                "engine": "semgrep",
+                                "message": stderr
+                                or "semgrep returned non-zero exit code without stderr",
+                            }
+                        )
                 except Exception as error:
                     failures.append({"engine": "semgrep", "message": str(error)})
             else:
@@ -197,14 +234,21 @@ def run_scan(repository_path, files, engines, timeout, semgrep_configs=None, mod
             npx_executable = resolve_executable("npx")
             if npx_executable:
                 try:
-                    return_code, payload, stderr = run_command(
+                    return_code, stdout, stderr = run_command(
                         [npx_executable, "eslint", ".", "--format", "json"],
                         root,
                         timeout,
                     )
+                    payload = parse_json_output(stdout, [])
                     results.extend(normalize_eslint(payload))
                     if return_code != 0:
-                        failures.append({"engine": "eslint", "message": stderr})
+                        failures.append(
+                            {
+                                "engine": "eslint",
+                                "message": stderr
+                                or "eslint returned non-zero exit code without stderr",
+                            }
+                        )
                 except Exception as error:
                     failures.append({"engine": "eslint", "message": str(error)})
             else:

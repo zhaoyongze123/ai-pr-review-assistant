@@ -4,41 +4,45 @@
 
 ```mermaid
 flowchart TD
-    A["接入 GitHub 仓库"] --> B["Repository Scan"]
-    B --> C["结构化索引 + 语义语料"]
-    C --> D["输入 PR 链接"]
-    D --> E["拉取 PR 与 patch"]
-    E --> F["首轮规则审查 + 首轮 AI 审查"]
-    F --> G["ReviewTriageDecision"]
-    G --> H{"是否需要更多上下文"}
-    H -- 否 --> I["生成候选评论"]
-    H -- 是 --> J["ContextRequest"]
-    J --> K["结构化检索 / 语义检索"]
-    K --> L["Second-pass Review"]
-    L --> I
-    I --> M["Comment Admission Gate"]
-    M --> N["Quality Scoring"]
-    N --> O["ReviewAggregateResult"]
+    A["输入 PR 链接"] --> B["解析 owner / repo / prNumber"]
+    B --> C["自动接入仓库"]
+    C --> D["检查当前 headSha 是否已有可用扫描"]
+    D --> E["必要时自动触发 Repository Scan"]
+    E --> F["结构化索引 + 语义语料"]
+    F --> G["拉取 PR 与 patch"]
+    G --> H["首轮规则审查 + 首轮 AI 审查"]
+    H --> I["ReviewTriageDecision"]
+    I --> J{"是否需要更多上下文"}
+    J -- 否 --> K["生成候选评论"]
+    J -- 是 --> L["ContextRequest"]
+    L --> M["结构化检索 / 语义检索"]
+    M --> N["Second-pass Review"]
+    N --> K
+    K --> O["Comment Admission Gate"]
+    O --> P["Quality Scoring"]
+    P --> Q["ReviewAggregateResult"]
 ```
 
 ## 2. 数据流输入输出
 
-### 阶段 1：仓库接入
+### 阶段 1：PR URL 解析与自动仓库接入
 
 输入：
 
-- `RepositoryConnectRequest`
+- `PullRequestUrl`
 
 输出：
 
+- `PullRequestRef`
 - `RepositoryConnectResponse`
 - `ApiErrorResponse`
 
-### 阶段 2：仓库扫描
+### 阶段 2：仓库扫描预热
 
 输入：
 
 - `RepositoryScanRequest`
+- `targetSha`
 
 输出：
 

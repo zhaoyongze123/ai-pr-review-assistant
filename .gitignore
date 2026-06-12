@@ -16,3 +16,4 @@ services/*/dist
 services/rule-engine/.venv
 __pycache__/
 *.tsbuildinfo
+docs/presentation-previews/

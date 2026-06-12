@@ -74,6 +74,8 @@ services:
       RULE_ENGINE_URL: http://rule-engine:58001
       LLM_API_BASE: ${LLM_API_BASE}
       LLM_API_KEY: ${LLM_API_KEY}
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-openai-compatible}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-deepseek-ai/DeepSeek-V4-Pro}
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}

@@ -101,16 +101,18 @@ flowchart LR
 
 系统分两条主线：
 
-- 仓库接入主线：构建 `Repository Intelligence`
+- 自动仓库预热主线：围绕 `PR URL` 自动完成仓库接入、scan 检查和必要补扫，构建 `Repository Intelligence`
 - PR 审查主线：执行 `Evidence-driven Review`
 
-这两条主线解耦。仓库语义地图可以复用，不应该每次 PR 都重扫整仓。
+这两条主线在用户入口上合并为一个 `PR URL` 单入口，在系统内部仍保持解耦。仓库语义地图可以复用，不应该每次 PR 都重扫整仓。
 
 ## 4. 仓库接入与 Repository Intelligence
 
 ### 4.1 目标
 
-当用户接入一个 GitHub 仓库后，系统自动构建一个“轻量仓库语义地图”，供后续 PR Review 按需检索。
+当用户输入一个 GitHub `PR URL` 后，系统先自动识别仓库并补齐仓库知识，再进入后续 PR Review。
+
+也就是说，仓库接入和扫描对用户来说不是单独入口，而是 `PR URL` 驱动的自动前置步骤。
 
 这个语义地图至少要回答：
 
@@ -125,16 +127,19 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["用户接入 GitHub 仓库"] --> B["保存 repository 记录"]
-    B --> C["拉取默认分支代码快照"]
-    C --> D["识别语言、框架、目录结构"]
-    D --> E["提取代码结构化索引"]
-    D --> F["提取文档语义语料"]
-    E --> G["生成文件职责和模块摘要"]
-    F --> H["切片并写入向量索引"]
-    G --> I["写入 PostgreSQL"]
-    H --> I
-    I --> J["形成 Repository Intelligence"]
+    A["输入 GitHub PR URL"] --> B["解析 owner / repo / prNumber"]
+    B --> C["保存 / 复用 repository 记录"]
+    C --> D{"当前 PR headSha 是否已有可用 scan"}
+    D -- 否 --> E["拉取默认分支代码快照"]
+    E --> F["识别语言、框架、目录结构"]
+    F --> G["提取代码结构化索引"]
+    F --> H["提取文档语义语料"]
+    G --> I["生成文件职责和模块摘要"]
+    H --> J["切片并写入向量索引"]
+    I --> K["写入 PostgreSQL"]
+    J --> K
+    K --> L["形成 Repository Intelligence"]
+    D -- 是 --> L
 ```
 
 ### 4.3 两层知识库，不是一层 RAG
@@ -750,7 +755,7 @@ PR 元信息。
 
 一期建议 3 个核心页面：
 
-1. 仓库接入页
+1. `PR URL` 审查入口页
 2. PR 审查工作台
 3. 仓库语义地图页
 

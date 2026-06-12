@@ -212,7 +212,7 @@ async function requestChatCompletion(input: ChatCompletionInput): Promise<{
   latencyMs: number;
 }> {
   const startedAt = Date.now();
-  const response = await fetch(`${stripTrailingSlash(input.apiBase)}/v1/chat/completions`, {
+  const response = await fetch(buildChatCompletionsUrl(input.apiBase), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
@@ -281,4 +281,18 @@ function normalizeReviewTriageDecisionPayload(payload: unknown): unknown {
 
 function stripTrailingSlash(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function buildChatCompletionsUrl(apiBase: string): string {
+  const normalizedBase = stripTrailingSlash(apiBase);
+
+  // 兼容两类配置：
+  // 1. https://host
+  // 2. https://host/v1
+  // 避免 provider 已带版本前缀时被重复拼成 /v1/v1/chat/completions。
+  if (normalizedBase.endsWith("/v1")) {
+    return `${normalizedBase}/chat/completions`;
+  }
+
+  return `${normalizedBase}/v1/chat/completions`;
 }

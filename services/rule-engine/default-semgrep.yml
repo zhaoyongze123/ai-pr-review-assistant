@@ -1,0 +1,31 @@
+rules:
+  - id: js.no-direct-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 禁止直接调用 eval，会引入明显的代码执行风险。
+    metadata:
+      category: security
+    pattern: eval(...)
+
+  - id: js.no-child-process-exec
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 直接调用 child_process.exec 需要明确校验输入，否则容易形成命令注入风险。
+    metadata:
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: exec(...)
+          - pattern: child_process.exec(...)
+
+  - id: js.no-raw-sql-template
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: 直接拼接 SQL 字符串容易引入注入风险，建议改成参数化查询。
+    metadata:
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: $DB.query(`...${...}...`)
+          - pattern: $DB.query("..." + $X + "...")
+
