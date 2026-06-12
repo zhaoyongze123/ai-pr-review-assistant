@@ -59,6 +59,26 @@ export class ApiConfigService {
     return value;
   }
 
+  get fallbackLlmApiBase(): string | undefined {
+    const value = process.env.FALLBACK_LLM_API_BASE?.trim();
+    return value || undefined;
+  }
+
+  get fallbackLlmApiKey(): string | undefined {
+    const value = process.env.FALLBACK_LLM_API_KEY?.trim();
+    return value || undefined;
+  }
+
+  get fallbackLlmProvider(): string | undefined {
+    const value = process.env.FALLBACK_LLM_PROVIDER?.trim();
+    return value || undefined;
+  }
+
+  get fallbackLlmModel(): string | undefined {
+    const value = process.env.FALLBACK_LLM_MODEL?.trim();
+    return value || undefined;
+  }
+
   get defaultLlmProvider(): string {
     return process.env.DEFAULT_LLM_PROVIDER?.trim() || "openai-compatible";
   }

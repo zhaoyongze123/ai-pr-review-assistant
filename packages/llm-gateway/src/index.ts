@@ -17,6 +17,10 @@ export type ChatCompletionInput = {
   apiKey: string;
   provider: string;
   model: string;
+  fallbackApiBase?: string;
+  fallbackApiKey?: string;
+  fallbackProvider?: string;
+  fallbackModel?: string;
   promptKind: string;
   messages: ChatMessage[];
   temperature?: number;
@@ -213,17 +217,14 @@ async function requestChatCompletion(input: ChatCompletionInput): Promise<{
 }> {
   const startedAt = Date.now();
   const response = await fetch(buildChatCompletionsUrl(input.apiBase), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: input.model,
-      messages: input.messages,
-      temperature: input.temperature ?? 0,
-    }),
+    ...buildCompletionRequest(input.apiKey, input.model, input.messages, input.temperature),
   });
+
+  if (!response.ok && hasFallbackTarget(input)) {
+    return requestFallbackChatCompletion(input, {
+      primaryStatus: response.status,
+    });
+  }
 
   if (!response.ok) {
     throw new Error(`LLM 网关请求失败，状态码 ${response.status}`);
@@ -239,6 +240,82 @@ async function requestChatCompletion(input: ChatCompletionInput): Promise<{
     payload,
     rawContent,
     latencyMs: Date.now() - startedAt,
+  };
+}
+
+async function requestFallbackChatCompletion(
+  input: ChatCompletionInput,
+  context: {
+    primaryStatus?: number;
+    primaryError?: unknown;
+  },
+): Promise<{
+  payload: LlmCompletionPayload;
+  rawContent: string;
+  latencyMs: number;
+}> {
+  const startedAt = Date.now();
+  const response = await fetch(buildChatCompletionsUrl(input.fallbackApiBase!), {
+    ...buildCompletionRequest(
+      input.fallbackApiKey!,
+      input.fallbackModel ?? input.model,
+      input.messages,
+      input.temperature,
+    ),
+  });
+
+  if (!response.ok) {
+    const primaryMessage =
+      context.primaryStatus !== undefined
+        ? `主上游状态码 ${context.primaryStatus}`
+        : context.primaryError instanceof Error
+          ? `主上游异常 ${context.primaryError.message}`
+          : "主上游请求失败";
+    throw new Error(
+      `${primaryMessage}；备用上游状态码 ${response.status}`,
+    );
+  }
+
+  const payload = (await response.json()) as LlmCompletionPayload;
+  const rawContent = payload.choices?.[0]?.message?.content?.trim();
+  if (!rawContent) {
+    throw new Error("备用 LLM 上游未返回可解析内容");
+  }
+
+  return {
+    payload: {
+      ...payload,
+      model: payload.model ?? input.fallbackModel ?? input.model,
+    },
+    rawContent,
+    latencyMs: Date.now() - startedAt,
+  };
+}
+
+function hasFallbackTarget(input: ChatCompletionInput): boolean {
+  return Boolean(
+    input.fallbackApiBase?.trim() &&
+      input.fallbackApiKey?.trim(),
+  );
+}
+
+function buildCompletionRequest(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  temperature?: number,
+) {
+  return {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: temperature ?? 0,
+    }),
   };
 }
 
